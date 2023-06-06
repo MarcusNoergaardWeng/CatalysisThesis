@@ -1,0 +1,111 @@
+### Trying to make a H-vector from the H+COOH data
+
+# Specify metals
+metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+alloy = ''.join(metals)
+
+# Specify name of databases
+db_name_COOH_H = 'COOH_H_adsorbed_all_sites_out.db' #FIND FILEN FREM
+
+# Initiate feature readers
+reader_COOH_H = FccStandard111(metals) #Hollow sites
+
+site_ids_COOH_H = [16, 17, 18]
+
+# Initiate counters of rejected samples
+rejected_COOH_H = 0
+
+# Writer headers to files
+with open(f'{features_folder}COOH_H_features.csv', 'w') as file_COOH_H:
+    file_COOH_H.write(",".join([f"feature{n}" for n in range(55)]) + f',G_ads(eV),slab db row,{db_name_COOH_H}row')
+
+# Load HEA(111) databases
+with connect(f'{db_folder}{db_name_COOH_H}') as db_COOH_H,\
+     connect(f'{db_folder}slabs_out.db') as db_slab,\
+     open(f'{features_folder}COOH_H_features.csv', 'a') as file_COOH_H:
+
+    # Iterate through slabs without adsorbates
+    for row_slab in db_slab.select('energy', H=0, C=0, O=0):
+        print(f"row_slab.id: {row_slab.id}")
+        
+        # Iterate through the adsorbate
+        for ads in ['H']:
+
+            # Set adsorbate-specific parameters
+            if ads == 'H':
+                db = db_H
+                kw = {'C':0, 'O': 0, 'H': 1}
+                db_name = db_name_COOH_H
+                out_file = file_COOH_H
+                ads_atom = "H"
+
+            # Set counter of matched slabs between the databases to zero
+            n_matched = 0
+
+            # Get the corresponding slab with adsorbate
+            for row in db.select('energy', **kw, **row_slab.count_atoms()):
+                print(f"row.id: {row.id}")
+                # If symbols match up
+                if row.symbols[:-len(ads)] == row_slab.symbols:
+
+                    # Increment the counter of matched structures
+                    n_matched += 1
+
+                    # Get atoms object
+                    atoms = db.get_atoms(row.id)
+
+                    # Make slab instance
+                    slab = Slab(atoms, ads=ads, ads_atom='H')
+
+                    # If the adsorbate is *H
+                    if ads == 'H': # Der er meget mere kode i "Load_prep_DFT_data" under H, måske mangler jeg noget
+                        
+                        atoms = atoms.repeat((3, 3, 1))
+                        slab = Slab(atoms, ads=ads, ads_atom=ads_atom)
+                        chemical_symbols = atoms.get_chemical_symbols()
+                        #view(atoms)
+                        H_index = [i for i, x in enumerate(chemical_symbols) if x == "H"][4]
+                        
+                        all_distances = atoms.get_distances([n for n in list(range(len(chemical_symbols))) if n != H_index], H_index)
+                        site_ids_H = np.argpartition(all_distances, 2)[0:3]
+                        site_ids_H = [x+1 if x>229 else x for x in site_ids_H] #Compensates for the removal of an H, so that the indices above 229 are not one too small
+                        #print("site_ids_H: ", site_ids_H)
+                        # Get hollow site planar corner coordinates
+                        site_atoms_pos_orig = atoms.positions[site_ids_H, :2]
+
+                        # Get expanded triangle vertices
+                        site_atoms_pos = expand_triangle(site_atoms_pos_orig, expansion=1.45)
+
+                        # Get position of adsorbate atom (with atom index XXX 20 XXX)
+                        ads_pos = atoms.positions[H_index][:2]
+
+                        # If the H is outside the expanded fcc triangle,
+                        # then it is most likely in an hcp site, that is not
+                        # being modeled
+                        if not inside_triangle(ads_pos, site_atoms_pos):
+                            rejected_COOH_H += 1
+                            continue
+
+                        # Get features of structure
+                        features = reader_COOH_H.get_features(slab, radius=2.6, site_ids=site_ids_H)
+
+                       
+                    # Get adsorption energy
+                    E_ads = correct_DFT_energy_H(correction_constant_H, molecules_dict, row.energy, row_slab.energy) # This is the new formula
+                    print(f"E_ads: {E_ads:.2f}")
+                    # Write output to file
+                    features = ','.join(map(str, features))
+                    out_file.write(f'\n{features},{E_ads:.6f},{row_slab.id},{row.id}')
+
+            # Print a message if more than one slabs were matched. This probably means that
+            # the same slab has accidentally been saved multiple to the database
+            if n_matched > 1:
+                print(f'[INFO] {n_matched} {ads} and slab matched for row {row_slab.id} in') #{db_name_slab}')
+
+            # Print a message if no slabs were matched. This probably means that the DFT calculation
+            # did not converge and was left out
+            #elif n_matched == 0:
+                #print(f'[INFO] No match found in {db_name} for row {row_slab.id} in {db_name_slab}')
+
+# Print the number of rejected samples to screen
+print('rejected COOH_H samples: ', rejected_COOH_H)
