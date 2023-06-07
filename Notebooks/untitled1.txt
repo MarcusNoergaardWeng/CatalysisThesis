@@ -1,0 +1,102 @@
+# Specify metals
+metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+alloy = ''.join(metals)
+
+# Specify name of databases
+db_name_COOH = 'COOH_H_adsorbed_all_sites_out.db'
+
+# Initiate feature readers
+reader_COOH_H = OntopStandard111(metals)
+
+site_ids_COOH_H = [16, 17, 18]
+
+# Initiate counters of rejected samples
+rejected_COOH_H = 0
+
+# Writer headers to files
+with open(f'{features_folder}COOH_H_COOHvec_features.csv', 'w') as file_COOH_H:
+    column_names = [f"feature{n}" for n in range(20)]
+    column_names.append('G_ads (eV)')
+    column_names.append('slab db row')
+    column_names.append(f'{db_name_COOH_H}row')
+    file_COOH_H.write(",".join(column_names))
+
+# Load HEA(111) databases
+with connect(f'{db_folder}{db_name_COOH_H}') as db_COOH_H,\
+     connect(f'{db_folder}slabs_out.db') as db_slab,\
+     open(f'{features_folder}COOH_H_COOHvec_features.csv', 'a') as file_COOH_H:
+
+    # Iterate through slabs without adsorbates
+    for row_slab in db_slab.select('energy', H=0, C=0, O=0):
+
+        # Iterate through the two adsorbates
+        for ads in ['COOH']:
+
+            # Set adsorbate-specific parameters
+            if ads == 'COOH':
+                db = db_COOH
+                kw = {'C':1, 'O': 2, 'H': 2}
+                db_name = db_name_COOH
+                out_file = file_COOH
+
+            # Set counter of matched slabs between the databases to zero
+            n_matched = 0
+
+            # Get the corresponding slab with adsorbate
+            for row in db.select('energy', **kw, **row_slab.count_atoms()):
+
+                # If symbols match up
+                all_ads = "HCOOH"
+                if row.symbols[:-len(all_ads)] == row_slab.symbols:
+
+                    # Increment the counter of matched structures
+                    n_matched += 1
+
+                    # Get atoms object
+                    atoms = db.get_atoms(row.id)
+
+                    # Make slab instance
+                    slab = Slab(atoms, ads=ads, ads_atom='C')
+
+                    # If the adsorbate is *COOH
+                    if ads == 'COOH':
+
+                        # Get adsorption site elements as neighbors within a radius
+                        site_elems, site = slab.get_adsorption_site(radius=2.6, hollow_radius=2.6)
+
+                        # If the site does not consist of exactly one atom, then skip this sample
+                        # as the *OH has moved too far away from an on-top site
+                        try:
+                            if len(site_elems) !=1:
+                                rejected_COOH_H += 1
+                                #slab.view()
+                                continue
+                        except TypeError:
+                            print(site_elems, site)
+                            print(row_slab.id, row.id)
+                            slab.view()
+                            exit()
+
+                        # Get features of structure
+                        features = reader_COOH_H.get_features(slab, radius=2.6)
+
+                    # Get adsorption energy
+                    #E_ads = row.energy - row_slab.energy + ref[ads] # THIS IS WHERE WE PUT IN THE NEW FORMULA
+                    E_ads = correct_DFT_energy_COOH_H(correction_constant_COOH_H, molecules_dict, row.energy, row_slab.energy) # This is the new formula
+                    #print(f"E_ads: {E_ads:.2f}")
+                    # Write output to file
+                    features = ','.join(map(str, features))
+                    out_file.write(f'\n{features},{E_ads:.6f},{row_slab.id},{row.id}')
+
+            # Print a message if more than one slabs were matched. This probably means that
+            # the same slab has accidentally been saved multiple to the database
+            if n_matched > 1:
+                print(f'[INFO] {n_matched} {ads} and slab matched for row {row_slab.id} in') #{db_name_slab}')
+
+            # Print a message if no slabs were matched. This probably means that the DFT calculation
+            # did not converge and was left out
+            #elif n_matched == 0:
+                #print(f'[INFO] No match found in {db_name} for row {row_slab.id} in {db_name_slab}')
+
+# Print the number of rejected samples to screen
+print('rejected COOH_H samples: ', rejected_COOH_H)
