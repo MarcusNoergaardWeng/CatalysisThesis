@@ -18,6 +18,24 @@ metal_colors = dict(Pt = '#babbcb',
                     Cu = '#B87333',
                     Au = '#fdd766')
 
+#### LOAD BINDING ENERGY MODELS ####
+
+def load_G_models():
+    #Load H binding energy (G) prediction model
+    H_DFT_model = xgb.Booster({'nthread': 8})
+    H_DFT_model.load_model("../models/"+"H_DFT.model")
+
+    #Load COOH binding energy (G) prediction model
+    COOH_DFT_model = xgb.Booster({'nthread': 8})
+    COOH_DFT_model.load_model("../models/"+"COOH_DFT.model")
+
+    #Load mixed site energy (G)  prediction model
+    mixed_DFT_model = xgb.Booster({'nthread': 8})
+    mixed_DFT_model.load_model("../models/"+"COOH_H.model")
+
+    models = {"H": H_DFT_model, "COOH": COOH_DFT_model, "mixed": mixed_DFT_model}
+    return models
+
 #### BAYESIAN OPTIMIZATION ROUTINE ####
 
 def Bayesian_optimization(space, simulate_loss_type):
