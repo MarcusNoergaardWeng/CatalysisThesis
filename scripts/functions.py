@@ -1,16 +1,349 @@
 import xgboost;
 import matplotlib.pyplot as plt
-import numpy as np
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes, InsetPosition
+import matplotlib.patches as patches
 import matplotlib.ticker as ticker
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, InsetPosition
+import numpy as np
+import pandas as pd
+import xgboost as xgb
 import time
+
+#### KEY VALUES ####
+dim_x, dim_y = 200, 200
+metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+
+metal_colors = dict(Pt = '#babbcb',
+                    Pd = '#1f8685',
+                    Ag = '#c3cdd6',
+                    Cu = '#B87333',
+                    Au = '#fdd766')
+
+#### BAYESIAN OPTIMIZATION ROUTINE ####
+
+def Bayesian_optimization(space, simulate_loss_type):
+    ## Normalize the search space dimensions
+    #space = normalize_dimensions(space)
+
+    # Initialize the Bayesian Optimizer
+    optimizer = gp_minimize(
+        simulate_loss_type,
+        space,
+        n_calls = 50, # Number of evaluations of the loss function
+        random_state=42, # Set a random seed for reproducibility
+        n_jobs = 1)
+
+    # Retrieve the intermediate results
+    results = optimizer.x_iters
+    losses = optimizer.func_vals
+
+    # Print the intermediate results
+    for i, result in enumerate(results):
+        loss = losses[i]
+        print(f"Iteration {i+1}: Surface Stochiometry: {result}, Loss: {loss}")
+
+    # Retrieve the optimal solution
+    optimal_surface_stochiometry = optimizer.x
+    optimal_loss = optimizer.fun  # Negate the loss to retrieve the maximized value
+
+    print("Optimal Surface Stochiometry:", optimal_surface_stochiometry)
+    print("Optimal Loss:", optimal_loss)
+    return optimal_surface_stochiometry
+
+#### PLOT THE RESULTS FROM THE BAYESIAN OPTIMIZATION ####
+
+def Bayesian_optimization_plot(results, losses, experiment_name):
+    # Plain colors list
+    colors_list = [metal_colors[metal] for metal in metals]
+
+    # Plot the progression of surface stochiometries #ChatGPT
+    fig = plt.figure(figsize=(10, 6))
+    plt.subplot(2, 1, 1)
+    for i, stoch in enumerate(np.array([stoch/np.sum(stoch) for stoch in results]).T):
+        plt.plot(stoch, c = colors_list[i], label = metals[i]) # HERE - Trying to make it plot each line in the appropriate colors
+    plt.title('Progression of Surface Stochiometries')
+    plt.xlabel('Iteration')
+    plt.ylabel('Surface Stochiometry')
+    plt.legend(loc="upper right", ncol = 2)
+    #plt.xlim(-5, np.shape(results)[0]*1.05)
+
+    # Plot the losses as a function of iteration
+    plt.subplot(2, 1, 2)
+    plt.plot(-losses)
+    plt.title('Number of good sites at each iteration')
+    plt.xlabel('Iteration')
+    plt.ylabel('Good sites')
+
+    # Adjust the layout of the subplots
+    plt.tight_layout()
+
+    # Save figure
+    #experiment_name = "140by140_100its_diagonal"
+    plt.savefig("../figures/DFT_calc_energies/"+experiment_name+"_progression.png", dpi = 300, bbox_inches = "tight")
+
+    # Show the plot
+    plt.show()
+    return None
+
+#### PLOTTING THE METALS IN THE GOOD HOLLOW SITES ####
+
+def metals_in_good_hollow_sites_plot(surface, reward_type, experiment_name):
+
+    import matplotlib.gridspec as gridspec
+
+    E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
+    # Create the figure and gridspec
+    fig = plt.figure(figsize=(10, 5))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[6, 3])
+
+    # Plot on the left subplot
+    good_hol_sites_sorted = sorted(["".join(sorted(x, reverse = True)) for x in good_hol_sites])
+    good_hol_sites_dict = Counter(good_hol_sites_sorted)
+
+    labels = good_hol_sites_dict.keys()
+    values = good_hol_sites_dict.values()
+
+    ax1 = plt.subplot(gs[0])
+    ax1.bar(labels, values)
+    ax1.set_xticklabels(labels, rotation=45)
+    ax1.set_xlabel('Combinations')
+    ax1.set_ylabel('Count')
+    ax1.set_title('Frequency of combinations of metals in good hollow sites')
+
+    # Plot on the right subplot
+    ax2 = plt.subplot(gs[1])
+    good_hol_sites_flat_dict = Counter(np.array(good_hol_sites).flatten())
+    labels = good_hol_sites_flat_dict.keys()
+    values = good_hol_sites_flat_dict.values()
+
+    colors = [metal_colors[metal] for metal in labels]
+
+    ax2.bar(labels, values, color = colors)
+    ax2.set_xlabel('Metals')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Frequency of each metal')
+
+    # Adjust the spacing between subplots
+    plt.subplots_adjust(wspace=0.3)
+
+    plt.savefig("../figures/DFT_calc_energies/"+experiment_name+"_good_sites.png", dpi = 300, bbox_inches = "tight")
+    # Show the plot
+    plt.show()
+    return None
+
+#### FUNCTIONS FOR PLOTTING BINDING ENERGIES H VS COOH ####
+
+def plot_pure_metals(SE_slab_metals, DeltaG_H, DeltaG_COOH, metal_colors):
+    # Create a figure and axes
+    fig, ax = plt.subplots(figsize = (6, 6))
+
+    # Set the limits for both x and y axes
+    ax.set_xlim(-0.6, 1.1)
+    ax.set_ylim(-0.6, 1.1)
+
+    ## Set the major ticks and tick labels
+    #ax.set_xticks([-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0])
+    #ax.set_xticklabels([-0.5, '', 0, '', 0.5, '', 1.0])
+    #ax.set_yticks([-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0])
+    #ax.set_yticklabels([-0.5, '', 0, '', 0.5, '', 1.0])
+
+    # Set the major ticks and tick labels
+    ax.set_xticks([-0.5, 0, 0.5, 1.0])
+    ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
+    ax.set_yticks([-0.5, 0, 0.5, 1.0])
+    ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
+
+    # Set the grid lines
+    ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
+
+    ax.set_title("DFT calculated energies for single metals fcc(111)")
+    ax.set_xlabel("$\Delta G_{^*H}$ [eV]")
+    ax.set_ylabel("$\Delta G_{^*COOH}$ [eV]")
+
+    for i, metal in enumerate(SE_slab_metals):
+            ax.scatter(DeltaG_H[i], DeltaG_COOH[i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
+        
+    if True:
+        # Create a rectangle patch
+        rect = patches.Rectangle((0, 0), 1.1, -0.6, linewidth=1, edgecolor='none', facecolor='green', alpha = 0.1)
+
+        # Add the rectangle to the plot
+        ax.add_patch(rect)
+        
+        label_text = f'Optimal area' #This can show how many points are in there as well
+        label_x = 0.55
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+
+    ax.legend()
+    plt.savefig("../figures/DFT_calc_energies/"+"Single_Metals"+".png", dpi = 600, bbox_inches = "tight")
+    plt.show()
+    return None
+
+def sort_energies(surface, reward_type): # Just make it return everything all the time
+    
+    # So this could quite nicely be a dictionary
+    
+    E_top_dict = {"Pt": [], "Pd": [], "Cu": [], "Ag": [], "Au": []}
+    E_hol_dict = {"Pt": [], "Pd": [], "Cu": [], "Ag": [], "Au": []} # Hollow sites that have a neighbour of that atom type and their index match up with the adsorbate on the top-site of that atom.
+    
+    # Which atoms are around the GOOD hollow sites?
+    good_hol_sites = []
+    n_sites = 0 # All sites
+    n_right_corner = 0  # The good sites
+    n_left_corner  = 0  # The bad  sites
+    n_diagonal     = 0  # The diagonal sites
+    
+    for x_top, y_top in [(x, y) for x in range(dim_x) for y in range(dim_y)]:
+        for x_diff, y_diff in [(0, 0), (0, -1), (-1, 0)]:                     
+            n_sites += 1
+            # What are the indices?
+            x_hollow = (x_top + x_diff) % dim_x
+            y_hollow = (y_top + y_diff) % dim_y
+            
+            # What are the energies?
+            on_top_E = surface["COOH_G"][x_top][y_top]
+            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            
+            # Which atom is the top-site?
+            top_site_atom = surface["atoms"][x_top, y_top, 0]
+            
+            # Append the information to the dicts and lists
+            E_top_dict[top_site_atom].append(on_top_E)
+            E_hol_dict[top_site_atom].append(hollow_E)
+            
+            # Find GOOD sites:
+            if (on_top_E < 0) and (hollow_E > 0): # Wait have a think about the loops
+                # Here is a good site!
+                n_right_corner += 1
+                # I am interested in knowing which metals are around the hollow sites except for Pt
+                atom1 = surface["atoms"][(x_hollow+0)%dim_x, (y_hollow+0)%dim_y, 0]
+                atom2 = surface["atoms"][(x_hollow+1)%dim_x, (y_hollow+0)%dim_y, 0]
+                atom3 = surface["atoms"][(x_hollow+0)%dim_x, (y_hollow+1)%dim_y, 0]
+                good_hol_sites.append([atom1, atom2, atom3])
+
+            if on_top_E < hollow_E: # The on-top binding energy is lower than hollow binding energy. Smaller means binds better
+                # Here is a good site!
+                n_diagonal += 1
+
+            if on_top_E < 0 and hollow_E < 0:
+                #Here is a bad site
+                n_left_corner += 1
+            
+            
+    n_left_corner_ratio = n_left_corner / n_sites
+    n_right_corner_ratio = n_right_corner / n_sites
+    n_diagonal_ratio = n_diagonal / n_sites
+    n_ratios = {"left_corner": n_left_corner_ratio, "right_corner": n_right_corner_ratio, "diagonal": n_diagonal_ratio}
+    return E_top_dict, E_hol_dict, good_hol_sites, n_ratios
+
+# Make this into a function! And make it save a nice plot. Perhaps ask for a name directly in the function-call
+def deltaEdeltaE_plot(filename, E_hol_dict, E_top_dict, SE_slab_metals, reward_type, show_plot):
+
+    fig, ax = plt.subplots(figsize = (6, 6))
+    
+    # Set the limits for both x and y axes
+    ax.set_xlim(-0.6, 1.1)
+    ax.set_ylim(-0.6, 1.1)
+    
+    # Set the major ticks and tick labels
+    ax.set_xticks([-0.5, 0, 0.5, 1.0])
+    ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
+    ax.set_yticks([-0.5, 0, 0.5, 1.0])
+    ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
+    
+    # Set the grid lines
+    ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
+    
+    ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
+    ax.set_xlabel("$\Delta G_{^*H}$ [eV]")
+    ax.set_ylabel("$\Delta G_{^*COOH}$ [eV]")
+    
+    if reward_type == "right_corner":
+        # Create a rectangle patch
+        rect = patches.Rectangle((0, 0), 1.1, -0.6, linewidth=1, edgecolor='none', facecolor='green', alpha = 0.1)
+    
+        # Add the rectangle to the plot
+        ax.add_patch(rect)
+        
+        label_text = f'Optimal area \n$n_{{optimal}} / n_{{sites}} = {100*n_ratios[reward_type]:.2f} \%$' #This can show how many points are in there as well
+        label_x = 0.55
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+    
+    if reward_type == "diagonal":
+        ax.plot([-0.6, 1.5], [-0.6, 1.5], 'k--', alpha = 0.0)  # Plot the diagonal line
+        ax.fill_between([-0.6, 1.5], [-0.6, 1.5], -1, where=(y >= -1), color='green', alpha=0.1)  # Fill the area under the line
+
+        label_text = f'Diagonal area \n$n_{{diagonal}} / n_{{sites}} = {100*n_ratios[reward_type]:.2f} \%$' #This can show how many points are in there as well
+        label_x = 0.55
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+
+    if reward_type == "left_corner":
+        # Create a rectangle patch
+        rect = patches.Rectangle((-0.6, -0.6), 0.6, 0.6, linewidth=1, edgecolor='none', facecolor='red', alpha = 0.1)
+    
+        # Add the rectangle to the plot
+        ax.add_patch(rect)
+        
+        label_text = f'Danger zone \n$n_{{bad}} / n_{{sites}} = {100*n_ratios[reward_type]:.2f} \%$' #This can show how many points are in there as well
+        label_x = -0.3
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+
+    if reward_type == "both_corners":
+        # Create a rectangle patch
+        rect = patches.Rectangle((-0.6, -0.6), 0.6, 0.6, linewidth=1, edgecolor='none', facecolor='red', alpha = 0.1)
+    
+        # Add the rectangle to the plot
+        ax.add_patch(rect)
+        
+        label_text = f'Danger zone \n$n_{{bad}} / n_{{sites}} = {100*n_ratios["left_corner"]:.2f} \%$' #This can show how many points are in there as well
+        label_x = -0.3
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+
+        # Create a rectangle patch
+        rect = patches.Rectangle((0, 0), 1.1, -0.6, linewidth=1, edgecolor='none', facecolor='green', alpha = 0.1)
+    
+        # Add the rectangle to the plot
+        ax.add_patch(rect)
+        
+        label_text = f'Optimal area \n$n_{{good}} / n_{{sites}} = {100*n_ratios["right_corner"]:.2f} \%$' #This can show how many points are in there as well
+        label_x = 0.55
+        label_y = -0.3
+        ax.text(label_x, label_y, label_text, ha='center', va='center', fontsize=12)
+
+    if reward_type == "opt_line":
+        ax.axhline(y=-0.12, color='black', linestyle='solid')
+        # Add a text label without LaTeX rendering
+        label_text = r'$\Delta G_{\mathrm{opt}} = -0.12\ \mathrm{eV}$'
+        label_x = 0.8
+        label_y = -0.09
+        plt.text(label_x, label_y, label_text, ha='center', va='center', fontsize=10)
+
+    for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
+        ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.2f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
+    
+    if True:
+        for i, metal in enumerate(SE_slab_metals):
+            ax.scatter(DeltaG_H[i], DeltaG_COOH[i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
+        
+    ax.legend(loc="upper right")
+    
+    plt.savefig("../figures/DFT_calc_energies/"+filename+".png", dpi = 600, bbox_inches = "tight")
+    if show_plot == True:
+        plt.show()
+    else:
+        plt.close()
+    return None
 
 #### FUNCTIONS FOR BAYESIAN OPTIMIZATION ####
 
 def simulate_loss_right_corner(surface_stochiometry):
     ## surface_stochiometry is a 5-len list of probabilities to draw each metal
     surface_stochiometry = np.array(surface_stochiometry) / np.sum(surface_stochiometry)
-    dim_x, dim_y, metals = 200, 200, ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+    metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
     surface = initialize_surface(dim_x, dim_y, metals, surface_stochiometry)
     
     # Predict energies on all sites for both adsorbates
@@ -97,7 +430,7 @@ def simulate_loss_both_corners(surface_stochiometry):
 def simulate_loss_diagonal(surface_stochiometry):
         ## surface_stochiometry is a 5-len list of probabilities to draw each metal
     surface_stochiometry = np.array(surface_stochiometry) / np.sum(surface_stochiometry)
-    dim_x, dim_y, metals = 140, 140, ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+    metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
     surface = initialize_surface(dim_x, dim_y, metals, surface_stochiometry)
     
     # Predict energies on all sites for both adsorbates
@@ -281,7 +614,7 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models):
 
     # Calculate the "*COOH given *H" and "*H given *COOH" energies
     surface = calc_given_energies(surface)
-    
+
     return surface
 
 def predict_G(surface, site_x, site_y, adsorbate, models):
