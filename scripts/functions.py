@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import time
+#from skopt import gp_minimize
 
 #### KEY VALUES ####
 dim_x, dim_y = 200, 200
@@ -35,6 +36,8 @@ def load_G_models():
 
     models = {"H": H_DFT_model, "COOH": COOH_DFT_model, "mixed": mixed_DFT_model}
     return models
+
+models = load_G_models() # I think I have to load it in here in order for the bayesian optimization scheme to work. I can't pass stuff to the functions
 
 #### BAYESIAN OPTIMIZATION ROUTINE ####
 
@@ -65,7 +68,7 @@ def Bayesian_optimization(space, simulate_loss_type):
 
     print("Optimal Surface Stochiometry:", optimal_surface_stochiometry)
     print("Optimal Loss:", optimal_loss)
-    return optimal_surface_stochiometry
+    return results, optimal_surface_stochiometry
 
 #### PLOT THE RESULTS FROM THE BAYESIAN OPTIMIZATION ####
 
@@ -255,7 +258,10 @@ def sort_energies(surface, reward_type): # Just make it return everything all th
     return E_top_dict, E_hol_dict, good_hol_sites, n_ratios
 
 # Make this into a function! And make it save a nice plot. Perhaps ask for a name directly in the function-call
-def deltaEdeltaE_plot(filename, E_hol_dict, E_top_dict, SE_slab_metals, reward_type, show_plot):
+def deltaEdeltaE_plot(filename, surface, pure_metal_info, reward_type, show_plot):
+
+    # First, calculate the statistics of interest
+    E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
 
     fig, ax = plt.subplots(figsize = (6, 6))
     
@@ -340,12 +346,13 @@ def deltaEdeltaE_plot(filename, E_hol_dict, E_top_dict, SE_slab_metals, reward_t
         label_y = -0.09
         plt.text(label_x, label_y, label_text, ha='center', va='center', fontsize=10)
 
+    stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
         ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.2f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
     
     if True:
-        for i, metal in enumerate(SE_slab_metals):
-            ax.scatter(DeltaG_H[i], DeltaG_COOH[i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
+        for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
+            ax.scatter(pure_metal_info["DeltaG_H"][i], pure_metal_info["DeltaG_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
         
     ax.legend(loc="upper right")
     
@@ -560,8 +567,10 @@ def initialize_surface(dim_x, dim_y, metals, split): #Is still random - could be
     surf_COOH_down     = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))
     surf_COOH_up_right = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))
     surf_COOH_up_left  = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))
+
+    stochiometry = dict(zip(metals, np.array(split)/np.sum(split)))
     
-    surf = {"atoms": surf_atoms,\
+    surf = {"atoms": surf_atoms, "stochiometry": stochiometry,\
             "COOH_G": surf_COOH_G, "H_G": surf_H_G, "mixed_down": surf_COOH_down, "mixed_up_right": surf_COOH_up_right, "mixed_up_left": surf_COOH_up_left}
     return surf
 
