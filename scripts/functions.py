@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import time
+import random
 #from skopt import gp_minimize
 
 #### KEY VALUES ####
@@ -18,6 +19,53 @@ metal_colors = dict(Pt = '#babbcb',
                     Ag = '#c3cdd6',
                     Cu = '#B87333',
                     Au = '#fdd766')
+
+#### MAKE SWIM RING SURFACE ####
+
+def AB_to_split(A, B): #Tested, works
+    split = [0, 0, 0, 0, 0]
+
+    if "Ag" in B:
+        split[0] += 6/len(B)
+    if "Au" in B:
+        split[1] += 6/len(B)
+    if "Pd" in A:
+        split[3] += 1/len(A)
+    if "Pt" in A:
+        split[4] += 1/len(A)
+    return split
+
+def make_long_vector(A, B, vector_length): # Tested, works
+    long_vector = [random.choice(A) for _ in range(vector_length // 3) for _ in range(3)]
+    long_vector[1::3] = [random.choice(B) for _ in range(vector_length // 3)]
+    long_vector[2::3] = [random.choice(B) for _ in range(vector_length // 3)]
+    return long_vector
+
+def initialize_swim_surface(A, B): # Tested, works
+    # Make the split from the metals used
+    split = AB_to_split(A, B)
+
+    # Make the surface (empty surface)
+    surface = initialize_surface(dim_x, dim_y, metals, split)
+
+    # Change out the top layer for the optimal swim ring surface
+    #n = 4*35
+    #top_dim_x, top_dim_y = 3*n, 3*n-1
+    #n_adams = int(top_dim_x * top_dim_y / 3)
+
+    # I need to know the closest number of atoms above the min amount that is divisible by 3
+    n_adams = dim_x*dim_y
+    long_vector = make_long_vector(A, B, n_adams+2)[0:n_adams] #Den lange vector skal ende med at være dim_x*dim_y lang
+
+    top_layer = np.reshape(long_vector, (dim_x, dim_y))
+    top_layer = top_layer[0:dim_x, 0:dim_y]
+
+    # Set the neatly arranged layer
+    surface["atoms"][:,:,0] = top_layer
+
+    # Predict energies on all sites for both adsorbates
+    surface = precompute_binding_energies_SPEED(surface, dim_x, dim_y, models)
+    return surface
 
 #### LOAD BINDING ENERGY MODELS ####
 
