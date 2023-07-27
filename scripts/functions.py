@@ -1,3 +1,4 @@
+import sys
 import xgboost;
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -10,6 +11,10 @@ import time
 import random
 #from skopt import gp_minimize
 from ase.db import connect
+
+sys.path.append('../scripts')
+from Slab import expand_triangle, Slab, inside_triangle
+from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
 dim_x, dim_y = 200, 200
@@ -287,6 +292,10 @@ def initialize_swim_surface(A, B): # Tested, works
     # Predict energies on all sites for both adsorbates
     surface = precompute_binding_energies_SPEED(surface, dim_x, dim_y, models)
     return surface
+
+#### TRAINING BINDING ENERGY PREDICTION MODELS ####
+
+
 
 #### LOAD BINDING ENERGY MODELS ####
 
@@ -1160,3 +1169,25 @@ def single_parity_plot(model_name, X_test, y_test_series, training_data, adsorba
     plt.savefig(figure_folder + str(time.time())[6:10]+str(time.time())[11:15], dpi = 300, bbox_inches = "tight")
     plt.show()
     return None
+
+def prepare_csv(feature_folder, filename, adsorbate):
+    init_df = pd.read_csv(feature_folder + filename)
+
+    # Add a first column about the adsorbate
+    adsorbate_df = pd.DataFrame([adsorbate for x in range(len(init_df))], columns = ["adsorbate"])
+
+    #Combine
+    prepared_df = pd.concat([adsorbate_df, init_df], axis = 1)
+    return prepared_df
+
+def return_mae(model_name, X_test, y_test_series): #Returns MAE on test set for a model (Either XGBoost or )
+    model_predictions = model_name.predict(X_test)
+    
+    if len(np.shape(model_predictions)) == 2:
+        model_predictions = model_predictions.reshape(-1)
+    y_test = y_test_series.values.tolist()
+    
+    # Find MAE:
+    errors = y_test_series.to_numpy().reshape(-1)-model_predictions
+    MAE = np.mean(np.abs(errors))
+    return MAE
