@@ -9,6 +9,7 @@ import xgboost as xgb
 import time
 import random
 #from skopt import gp_minimize
+from ase.db import connect
 
 #### KEY VALUES ####
 dim_x, dim_y = 200, 200
@@ -19,6 +20,226 @@ metal_colors = dict(Pt = '#babbcb',
                     Ag = '#c3cdd6',
                     Cu = '#B87333',
                     Au = '#fdd766')
+
+# Free (eV)
+CO2   = {"ZPE": 0.31, "CpdT": 0.10, "minusTS": -0.66, "TS": 0.66}
+CO    = {"ZPE": 0.13, "CpdT": 0.09, "minusTS": -0.61, "TS": 0.61}
+H2    = {"ZPE": 0.28, "CpdT": 0.09, "minusTS": -0.40, "TS": 0.40}
+H2O   = {"ZPE": 0.57, "CpdT": 0.10, "minusTS": -0.67, "TS": 0.67}
+HCOOH = {"ZPE": 0.90, "CpdT": 0.11, "minusTS": -0.99, "TS": 0.99}
+#Slab  = {"ZPE": 0.00, "CpdT": 0.00, "minusTS": -0.00} #Holy moly, den her overskrev Slab funktionen
+
+# *Bound to the surface (eV)
+# Bidentate *OOCH?
+bound_CO   = {"ZPE": 0.19, "CpdT": 0.08, "minusTS": -0.16, "TS": 0.16}
+bound_OH   = {"ZPE": 0.36, "CpdT": 0.05, "minusTS": -0.08, "TS": 0.08}
+bound_OCHO = {"ZPE": 0.62, "CpdT": 0.11, "minusTS": -0.24, "TS": 0.24} #Either bidentate or monodentate. Use for both for now
+bound_O    = {"ZPE": 0.07, "CpdT": 0.03, "minusTS": -0.04, "TS": 0.04}
+bound_COOH = {"ZPE": 0.62, "CpdT": 0.10, "minusTS": -0.19, "TS": 0.19}
+bound_H    = {"ZPE": 0.23, "CpdT": 0.01, "minusTS": -0.01, "TS": 0.01}
+
+# Approximation Factors (FA)
+AF = {"CO2": CO2, "CO": CO, "H2": H2, "H2O": H2O, "HCOOH": HCOOH, \
+      "bound_CO": bound_CO, "bound_OH": bound_OH, "bound_OCHO": bound_OCHO, \
+      "bound_O": bound_O, "bound_COOH": bound_COOH, "bound_H": bound_H}
+
+# This is from the molecules_out.db file
+molecules_dict = {'CO': -12.848598765234707,\
+ 'CO2': -19.15168636258064,\
+ 'CH2O2': -25.7548327798152,\
+ 'C2H4O2': -41.95993780269195,\
+ 'H2': -6.67878491734772,\
+ 'H2O': -12.225511685485456,\
+ 'CH2O': -19.92286258910958,\
+ 'CH4O': -27.652189372849637,\
+ 'C2H6O': -43.67355392866396,\
+ 'C2H2O2': -32.92328015484662,\
+ 'C2H2O4': -44.117581976029946}
+
+#### MAKING FEATURES FROM DFT DATA ####
+
+def features_from_DFT_data_H_and_COOH(features_folder, db_folder, db_name_H, db_name_COOH, db_name_slab, feature_file_H, feature_file_COOH):
+    # Specify metals
+    metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
+    alloy = ''.join(metals)
+
+    # Initiate feature readers
+    reader_H = FccStandard111(metals)
+    reader_COOH = OntopStandard111(metals)
+
+    site_ids_H = [16, 17, 18]
+
+    # Initiate counters of rejected samples
+    rejected_H = 0
+    rejected_COOH = 0
+
+    # Writer headers to files
+    with open(f'{features_folder}{feature_file_H}', 'w') as file_H:
+        column_names = [f"feature{n}" for n in range(55)]
+        column_names.append('G_ads (eV)')
+        column_names.append('slab db row')
+        column_names.append(f'{db_name_H}row')
+        file_H.write(",".join(column_names))
+        
+    # Writer headers to files
+    with open(f'{features_folder}{feature_file_COOH}', 'w') as file_COOH:
+        column_names = [f"feature{n}" for n in range(20)]
+        column_names.append('G_ads (eV)')
+        column_names.append('slab db row')
+        column_names.append(f'{db_name_COOH}row')
+        file_COOH.write(",".join(column_names))
+        
+    # Load HEA(111) or Swim rings databases
+    with connect(f'{db_folder}{db_name_H}') as db_H,\
+        connect(f'{db_folder}{db_name_COOH}') as db_COOH,\
+        connect(f'{db_folder}{db_name_slab}') as db_slab,\
+        open(f'{features_folder}{feature_file_H}', 'a') as file_H,\
+        open(f'{features_folder}{feature_file_COOH}', 'a') as file_COOH:
+        #print("A1")
+        # Iterate through slabs without adsorbates
+        for row_slab in db_slab.select('energy', H=0, C=0, O=0): # This doesn't even trigger lmao
+            #print("A2")
+            # Iterate through the two adsorbates
+            for ads in ['COOH', 'H']:
+                #print("A3")
+                # Set adsorbate-specific parameters
+                if ads == 'COOH':
+                    db = db_COOH
+                    kw = {'C': 1,'O': 2, 'H': 1}
+                    db_name = db_name_COOH
+                    out_file = file_COOH
+
+                elif ads == 'H':
+                    db = db_H
+                    kw = {'O': 0, 'H': 1}
+                    db_name = db_name_H
+                    out_file = file_H
+                    ads_atom = "H"
+
+                # Set counter of matched slabs between the databases to zero
+                n_matched = 0
+
+                # Get the corresponding slab with adsorbate
+                for row in db.select('energy', **kw, **row_slab.count_atoms()):
+                    #print("A4")
+                    # If symbols match up
+                    if row.symbols[:-len(ads)] == row_slab.symbols:
+                        #print("A5")
+                        # Increment the counter of matched structures
+                        n_matched += 1
+
+                        # Get atoms object
+                        atoms = db.get_atoms(row.id)
+
+                        # If the adsorbate is *COOH
+                        if ads == 'COOH':
+                            # Make slab instance
+                            slab = Slab(atoms, ads=ads, ads_atom='C')
+
+                            # Get adsorption site elements as neighbors within a radius
+                            site_elems, site = slab.get_adsorption_site(radius=2.6, hollow_radius=2.6)
+
+                            # If the site does not consist of exactly one atom, then skip this sample
+                            # as the *OH has moved too far away from an on-top site
+                            try:
+                                if len(site_elems) !=1:
+                                    rejected_COOH += 1
+                                    #slab.view()
+                                    continue
+                            except TypeError:
+                                print(site_elems, site)
+                                print(row_slab.id, row.id)
+                                slab.view()
+                                exit()
+
+                            # Get features of structure
+                            features = reader_COOH.get_features(slab, radius=2.6)
+                            
+                            ### This part is now adsorbate-specific ###
+                            # Get adsorption energy
+                            E_ads = correct_DFT_energy_COOH(molecules_dict, row.energy, row_slab.energy) # This is the new formula
+
+                            # Write output to file
+                            features = ','.join(map(str, features))
+                            out_file.write(f'\n{features},{E_ads:.6f},{row_slab.id},{row.id}')
+
+                        # Else, if the adsorbate is H*
+                        elif ads == 'H':
+                            
+                            atoms = atoms.repeat((3, 3, 1))
+                            slab = Slab(atoms, ads=ads, ads_atom=ads_atom)
+                            chemical_symbols = atoms.get_chemical_symbols()
+                            #view(atoms)
+                            H_index = [i for i, x in enumerate(chemical_symbols) if x == "H"][4]
+                            
+                            all_distances = atoms.get_distances([n for n in list(range(len(chemical_symbols))) if n != H_index], H_index)
+                            site_ids_H = np.argpartition(all_distances, 2)[0:3]
+                            site_ids_H = [x+1 if x>229 else x for x in site_ids_H] #Compensates for the removal of an H, so that the indices above 229 are not one too small
+                            #print("site_ids_H: ", site_ids_H)
+                            # Get hollow site planar corner coordinates
+                            site_atoms_pos_orig = atoms.positions[site_ids_H, :2]
+
+                            # Get expanded triangle vertices
+                            site_atoms_pos = expand_triangle(site_atoms_pos_orig, expansion=1.45)
+
+                            # Get position of adsorbate atom (with atom index XXX 20 XXX)
+                            ads_pos = atoms.positions[H_index][:2]
+
+                            # If the H is outside the expanded fcc triangle,
+                            # then it is most likely in an hcp site, that is not
+                            # being modeled
+                            if not inside_triangle(ads_pos, site_atoms_pos):
+                                rejected_H += 1
+                                continue
+
+                            # Get features of structure
+                            features = reader_H.get_features(slab, radius=2.6, site_ids=site_ids_H)
+
+                            ### This part is now adsorbate-specific ###
+                            # Get adsorption energy
+                            E_ads = correct_DFT_energy_H(molecules_dict, row.energy, row_slab.energy) # This is the new formula
+                            
+                            # Write output to file
+                            features = ','.join(map(str, features))
+                            out_file.write(f'\n{features},{E_ads:.6f},{row_slab.id},{row.id}')
+
+                if n_matched > 1:
+                    print(f'[INFO] {n_matched} {ads} and slab matched for row {row_slab.id} in {db_name_slab}')
+
+    # Print the number of rejected samples to screen
+    print('rejected COOH samples: ', rejected_COOH)
+    print('rejected H samples: ', rejected_H)
+    return None
+
+#### CORRECTION CONSTANTS AND CORRECTING DFT ENERGIES ####
+
+def calc_correction_constant_COOH(AF):
+    ### Summing up all the Approximation Factors for COOH
+    ZpE_sum  = AF["bound_COOH"]["ZPE"]  - AF["HCOOH"]["ZPE"]  + 1/2*AF["H2"]["ZPE"]
+    CpdT_sum = AF["bound_COOH"]["CpdT"] - AF["HCOOH"]["CpdT"] + 1/2*AF["H2"]["CpdT"]
+    TS_sum   = AF["bound_COOH"]["TS"]   - AF["HCOOH"]["TS"]   + 1/2*AF["H2"]["TS"] #Figure the signs out
+    correction_constant_COOH = ZpE_sum + CpdT_sum - TS_sum
+    return correction_constant_COOH
+
+def correct_DFT_energy_COOH(molecules_dict, E_COOH, E_slab):
+    DeltaE = E_COOH - molecules_dict["CH2O2"] + 1/2*molecules_dict["H2"] - E_slab
+    correction_constant_COOH = calc_correction_constant_COOH(AF)
+    DeltaG = DeltaE + correction_constant_COOH
+    return DeltaG
+
+def calc_correction_constant_H(AF):
+    ### Summing up all the Approximation Factors for H
+    ZpE_sum  = AF["bound_H"]["ZPE"]  - 1/2 * AF["H2"]["ZPE"] # Stokiometrien er bevaret! Tak, Oliver
+    CpdT_sum = AF["bound_H"]["CpdT"] - 1/2 * AF["H2"]["CpdT"]
+    TS_sum   = AF["bound_H"]["TS"]   - 1/2 * AF["H2"]["TS"]
+    correction_constant_H = ZpE_sum + CpdT_sum - TS_sum
+    return correction_constant_H
+
+def correct_DFT_energy_H(molecules_dict, E_H, E_slab):
+    DeltaE = E_H - 1/2*molecules_dict["H2"] - E_slab
+    correction_constant_H = calc_correction_constant_H(AF)
+    DeltaG = DeltaE + correction_constant_H
+    return DeltaG
 
 #### MAKE SWIM RING SURFACE ####
 
