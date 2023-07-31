@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.ticker as ticker
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, InsetPosition
+from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from xgboost import XGBRegressor
 import time
 import random
 #from skopt import gp_minimize
@@ -60,6 +62,21 @@ molecules_dict = {'CO': -12.848598765234707,\
  'C2H6O': -43.67355392866396,\
  'C2H2O2': -32.92328015484662,\
  'C2H2O4': -44.117581976029946}
+
+#### LAOADING AND PREPARING FEATURES DATA FROM CSV FILES ####
+
+def prepare_dataset(feature_folder, filename):
+    full_df = pd.read_csv(feature_folder + filename)
+
+    all_cols = full_df.columns
+    #Seperate the energies and remove the useless columns
+
+    X = full_df.loc[:, :all_cols[-4]]
+    y = full_df[["G_ads (eV)"]] #Der er åbenbart et mellemrum her, det forsvinder måske, hvis jeg laver features igen
+    
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size = 0.2)
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size = 0.5)
+    return X_train, y_train, X_val, y_val, X_test, y_test
 
 #### MAKING FEATURES FROM DFT DATA ####
 
@@ -1004,9 +1021,42 @@ def pandas_to_DMatrix(df):#, label):
 
 #### FUNCTIONS FOR TRAINING MODELS ####
 
-def learning_curve(model_name): #For regressor
+def train_XGB_model(model_name, adsorbate, X_train, y_train, X_val, y_val, X_test, y_test):
+    # Prepare XGBoost
+    eval_set = [(X_train, y_train), (X_val, y_val)]
+    XGBModel_H =  XGBRegressor(learning_rate = 0.1 #learning rate
+                                , max_depth = 5     #maximum tree depth
+                                , n_estimators = 500 #number of boosting rounds
+                                , n_jobs = 8 #number of threads
+                                , use_label_encoder = False)
+
+    XGBModel_H.fit(X_train, y_train
+                       , eval_set = eval_set
+                       , early_stopping_rounds = 5
+                       , eval_metric = ["mae"]
+                       , verbose = False) #evals
+    
+    # Save model in the /models folder
+    XGBModel_H.save_model("../models/" + model_name + ".model")
+
+    learning_curve(XGBModel_H, model_name)
+
+    score = XGBModel_H.score(X_train, y_train) #Det må man ikke før den er blevet trænet
+    print("Training score: ", score)
+
+    score = XGBModel_H.score(X_val, y_val) #Det må man ikke før den er blevet trænet
+    print("Validation score: ", score)
+
+    score = XGBModel_H.score(X_test, y_test) #Det må man ikke før den er blevet trænet
+    print("Test score: ", score)
+
+    single_parity_plot(XGBModel_H, model_name, X_test, y_test, adsorbate, adsorbate)
+
+    return None
+
+def learning_curve(model, model_name): #For regressor
     # retrieve performance metrics
-    results = model_name.evals_result()
+    results = model.evals_result()
     epochs = len(results['validation_0']['mae'])
     x_axis = range(0, epochs)
     
@@ -1019,11 +1069,13 @@ def learning_curve(model_name): #For regressor
     plt.xlabel("Epoch")
     plt.ylabel('Log Loss')
     plt.title('XGBoost Loss curve')
+    figure_folder = "../figures/Loss_curves/"
+    plt.savefig(figure_folder + model_name, dpi = 300, bbox_inches = "tight")
     plt.show()
     return None
 
-def single_parity_plot(model_name, X_test, y_test_series, training_data, adsorbate):
-    model_predictions = model_name.predict(X_test)
+def single_parity_plot(model, model_name, X_test, y_test_series, training_data, adsorbate):
+    model_predictions = model.predict(X_test)
     
     model_type_title = "Gradient Boosting"
     #Fix sklearn LinearRegressions weird list of lists thing
@@ -1166,7 +1218,9 @@ def single_parity_plot(model_name, X_test, y_test_series, training_data, adsorba
     
     #plt.savefig(figure_folder + "Parity_trained_OH_tested_BOTH.png", dpi = 300, bbox_inches = "tight")
     # Save figure with a random name, rename later
-    plt.savefig(figure_folder + str(time.time())[6:10]+str(time.time())[11:15], dpi = 300, bbox_inches = "tight")
+    figure_folder = "../figures/DeltaG_models/"
+    plt.savefig(figure_folder + model_name, dpi = 300, bbox_inches = "tight")
+    #plt.savefig(figure_folder + str(time.time())[6:10]+str(time.time())[11:15], dpi = 300, bbox_inches = "tight")
     plt.show()
     return None
 
