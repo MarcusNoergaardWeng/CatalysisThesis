@@ -78,6 +78,27 @@ def prepare_dataset(feature_folder, filename):
     X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size = 0.5)
     return X_train, y_train, X_val, y_val, X_test, y_test
 
+def combine_neighbour_features(feature_folder, db_name, filename_H, filename_COOH): #Tested, seems
+    """This function combines the hollow vector and the on-top vector"""
+    # Read the dataframes
+    H_df = pd.read_csv(feature_folder + filename_H)
+    COOH_df = pd.read_csv(feature_folder + filename_COOH)
+
+    # Combine the dataframes
+    combined_df = pd.merge(H_df, COOH_df, on = db_name + "row") #det hedder: db_name_SWR + "row"
+    y = combined_df[["G_ads(eV)"]] #Do I need to hardcopy this in order to not pass by reference?
+
+    # List of unwanted column names
+    unwanted_columns = ['G_ads(eV)', 'G_ads (eV)', 'slab db row_y', 'slab db row_x', db_name + "row"]
+
+    # Remove the unwanted columns from the combined dataframe
+    X = combined_df.drop(columns=unwanted_columns)
+
+    # Or just go straight to train, val, test - prob the good idea
+    X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size = 0.2)
+    X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size = 0.5)
+    return X_train, y_train, X_val, y_val, X_test, y_test
+
 #### MAKING FEATURES FROM DFT DATA ####
 
 def features_from_mixed_sites(db_folder, db_name, db_name_slab, features_folder, feature_file_H, feature_file_COOH):
@@ -518,10 +539,6 @@ def initialize_swim_surface(A, B): # Tested, works
     # Predict energies on all sites for both adsorbates
     surface = precompute_binding_energies_SPEED(surface, dim_x, dim_y, models)
     return surface
-
-#### TRAINING BINDING ENERGY PREDICTION MODELS ####
-
-
 
 #### LOAD BINDING ENERGY MODELS ####
 
