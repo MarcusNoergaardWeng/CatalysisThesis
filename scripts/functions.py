@@ -1250,33 +1250,33 @@ def pandas_to_DMatrix(df):#, label):
 def train_XGB_model(model_name, adsorbate, X_train, y_train, X_val, y_val, X_test, y_test):
     # Prepare XGBoost
     eval_set = [(X_train, y_train), (X_val, y_val)]
-    XGBModel_H =  XGBRegressor(learning_rate = 0.1 #learning rate
+    XGBModel =  XGBRegressor(learning_rate = 0.1 #learning rate
                                 , max_depth = 5     #maximum tree depth
                                 , n_estimators = 500 #number of boosting rounds
                                 , n_jobs = 8 #number of threads
                                 , use_label_encoder = False)
 
-    XGBModel_H.fit(X_train, y_train
+    XGBModel.fit(X_train, y_train
                        , eval_set = eval_set
                        , early_stopping_rounds = 5
                        , eval_metric = ["mae"]
                        , verbose = False) #evals
     
     # Save model in the /models folder
-    XGBModel_H.save_model("../models/" + model_name + ".model")
+    XGBModel.save_model("../models/" + model_name + ".model")
 
-    learning_curve(XGBModel_H, model_name)
+    learning_curve(XGBModel, model_name)
 
-    score = XGBModel_H.score(X_train, y_train) #Det må man ikke før den er blevet trænet
+    score = XGBModel.score(X_train, y_train) #Det må man ikke før den er blevet trænet
     print("Training score: ", score)
 
-    score = XGBModel_H.score(X_val, y_val) #Det må man ikke før den er blevet trænet
+    score = XGBModel.score(X_val, y_val) #Det må man ikke før den er blevet trænet
     print("Validation score: ", score)
 
-    score = XGBModel_H.score(X_test, y_test) #Det må man ikke før den er blevet trænet
+    score = XGBModel.score(X_test, y_test) #Det må man ikke før den er blevet trænet
     print("Test score: ", score)
 
-    single_parity_plot(XGBModel_H, model_name, X_test, y_test, adsorbate, adsorbate)
+    single_parity_plot(XGBModel, model_name, X_test, y_test, adsorbate, adsorbate)
 
     return None
 
