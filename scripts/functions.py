@@ -543,19 +543,54 @@ def initialize_swim_surface(A, B): # Tested, works
 #### LOAD BINDING ENERGY MODELS ####
 
 def load_G_models():
-    #Load H binding energy (G) prediction model
-    H_DFT_model = xgb.Booster({'nthread': 8})
-    H_DFT_model.load_model("../models/"+"H_DFT.model")
+    """"This function loads the current best binding energy (G) prediction models trained on 
+    both HEA (High-Entropy Alloy) and SWR (Swim-Ring) data.
+    Except for CO, that I only have data on for the HEA slabs"""
 
-    #Load COOH binding energy (G) prediction model
-    COOH_DFT_model = xgb.Booster({'nthread': 8})
-    COOH_DFT_model.load_model("../models/"+"COOH_DFT.model")
+    # Load H binding energy (G) prediction model - Trained on HEA and SWR data
+    H_HEA_SWR_model = xgb.Booster({'nthread': 8})
+    H_HEA_SWR_model.load_model("../Models/"+"H_HEA_SWR.model")
 
-    #Load mixed site energy (G)  prediction model
-    mixed_DFT_model = xgb.Booster({'nthread': 8})
-    mixed_DFT_model.load_model("../models/"+"COOH_H.model")
+    # Load COOH binding energy (G) prediction model - Trained on HEA and SWR data
+    COOH_HEA_SWR_model = xgb.Booster({'nthread': 8})
+    COOH_HEA_SWR_model.load_model("../Models/"+"COOH_HEA_SWR.model")
 
-    models = {"H": H_DFT_model, "COOH": COOH_DFT_model, "mixed": mixed_DFT_model}
+    # Load mixed site energy (G)  prediction model - Trained on HEA and SWR data
+    mixed_HEA_SWR_model = xgb.Booster({'nthread': 8})
+    mixed_HEA_SWR_model.load_model("../Models/"+"COOH_H_HEA_SWR.model")
+
+    ## Load models used only for the coverage simulations
+
+    # Load CO binding energy (G) prediction - Trained on HEA data - Not being used at the moment though
+    CO_model = xgb.Booster({'nthread': 8})
+    CO_model.load_model("../Models/"+"CO_HEA.model")
+
+    # Load OH binding energy (G) prediction model - Trained on HEA data
+    OH_model = xgb.Booster({'nthread': 8})
+    OH_model.load_model("../Models/Old_models/"+"OH.model")
+
+    # Load OH binding energy (G) prediction model - Trained on HEA data
+    O_model = xgb.Booster({'nthread': 8})
+    O_model.load_model("../Models/Old_models/"+"O.model")
+
+    ## Load OLD models only trained on HEA data
+
+    # Load old H binding energy (G) model - Trained on HEA data only
+    H_HEA_model = xgb.Booster({'nthread': 8})
+    H_HEA_model.load_model("../Models/"+"H_HEA.model")
+
+    # Load old COOH binding energy (G) model - Trained on HEA data only
+    COOH_HEA_model = xgb.Booster({'nthread': 8})
+    COOH_HEA_model.load_model("../Models/"+"COOH_HEA.model")
+
+    # Load old H+COOH binding energy (G) model - Trained on HEA data only
+    mixed_HEA_model = xgb.Booster({'nthread': 8})
+    mixed_HEA_model.load_model("../Models/"+"COOH_H_HEA.model")
+
+    models = {"H": H_HEA_SWR_model, "COOH": COOH_HEA_SWR_model, \
+              "mixed": mixed_HEA_SWR_model, \
+              "CO": CO_model, "OH": OH_model, "O": O_model, \
+              "H_old": H_HEA_model, "COOH_old": COOH_HEA_model, "mixed_old": mixed_HEA_model}
     return models
 
 models = load_G_models() # I think I have to load it in here in order for the bayesian optimization scheme to work. I can't pass stuff to the functions
@@ -1106,7 +1141,7 @@ def create_surface(dim_x, dim_y, metals, split):
         surface = np.random.choice(metals, num_atoms, p=proba)
     else:
         surface = np.random.choice(metals, num_atoms, p=split)
-    surface = np.reshape(surface, (dim_x, dim_y, dim_z)) #Reshape list to the
+    surface = np.reshape(surface, (dim_x, dim_y, dim_z))
     return surface
 
 def precompute_binding_energies_TQDM(surface, dim_x, dim_y, models, predict_G_function): #TJEK I think this function can go faster if I make all the data first appended to a list, then to a PD and then 
@@ -1120,10 +1155,12 @@ def precompute_binding_energies_TQDM(surface, dim_x, dim_y, models, predict_G_fu
 
     return surface
 
-def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models):
+def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD OH, H, mixed-site sådan at det kan bruges til coverage simulations
     H_features    = []
     COOH_features = []
-    #index_pairs   = []
+    
+    # ADD OH FEATURES TJEK
+    # ADD H FEATURES TJEK
 
     # Make features for each site:
     for x, y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:#, desc = r"Making all feature vectors", leave = True): # I could randomise this, so I go through all sites in a random order
@@ -1145,8 +1182,8 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models):
     COOH_features_DM = pandas_to_DMatrix(COOH_features_df)
 
     # Predict energies in one long straight line
-    H_G    = models["H"].predict(H_features_DM)
-    COOH_G = models["COOH"].predict(COOH_features_DM)
+    H_G    = models["H"].predict(H_features_DM)       # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
+    COOH_G = models["COOH"].predict(COOH_features_DM) # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
 
     # Make them into a nice matrix shape - in a minute
     H_G    = np.reshape(H_G   , (dim_x, dim_y))
@@ -1471,3 +1508,297 @@ def return_mae(model_name, X_test, y_test_series): #Returns MAE on test set for 
     errors = y_test_series.to_numpy().reshape(-1)-model_predictions
     MAE = np.mean(np.abs(errors))
     return MAE
+
+#### RUNNING COVERAGE SIMULATIONS BASED ON SURFACE AND G PREDICTION MODELS ####
+
+def initialize_surface_coverage_simulation(dim_x, dim_y, metals, split): #Is still random - could be used with a seed in the name of reproduceability
+    dim_z = 3
+    #surface_list = np.array([int(dim_x*dim_y*dim_z/len(metals))*[metals[metal_number]] for metal_number in range(len(metals))]).flatten() #Jack had a way shorter way of doing this, but I think it was random drawing instead of ensuring a perfectly even split
+    #np.random.shuffle(surface_list) #Shuffle list
+    #surf_atoms = np.reshape(surface_list, (dim_x, dim_y, dim_z)) #Reshape list to the
+    
+    surf_atoms = create_surface(dim_x, dim_y, metals, split)
+    
+    # Adsorbates
+    surf_ads_top = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+    surf_ads_hol = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+    
+    # Binding energies
+    surf_COOH_G = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+    surf_H_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
+    surf_OH_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+    surf_O_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
+    
+    # Ad/desorbs at voltage (At which voltage is the binding energy 0?)
+    surf_COOH_V = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+    surf_H_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
+    surf_OH_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
+    surf_O_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
+    
+    surf = {"atoms": surf_atoms, "ads_top": surf_ads_top, "ads_hol": surf_ads_hol, \
+            "COOH_G": surf_COOH_G, "H_G": surf_H_G, "OH_G": surf_OH_G, \
+            "O_G": surf_O_G, "COOH_V": surf_COOH_V, "H_V": surf_H_V, \
+            "OH_V": surf_OH_V, "O_V": surf_O_V} #This line had a but that took me two days to find... Pass by reference is such a smart feature (y)
+    return surf
+
+def voltage_sweep(start, end, scan_rate):
+    return np.linspace(start, end, int(np.abs(start - end) / scan_rate))
+
+def calc_V_border(ads, G):
+    """This function returns the border-voltage, at which the adsorbate adsorbs or desorbs"""
+    
+    if ads == "H":
+        V_border = - G  # Lille boost #+ 0.7 # HER sætter jeg lige et boost ind, for at tjekke, om det fungerer, når *CO-reaktionen sker
+    if ads == "COOH":
+        V_border = G # TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
+    if ads == "OH":
+        V_border = G # Hvad er funktionen? Det samme som for COOH?
+    if ads == "O":
+        V_border = G/2 # Hvad er funktionen? Her hopper 2 elektroner af, så der sker noget andet
+    
+    return V_border
+
+def create_log_file(file_name, column_names):
+    with open(file_name, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(column_names)
+    return None
+
+def append_to_log_file(file_name, data):
+    with open(file_name, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(data)
+    return None
+
+def look_at_all_sites_and_adsorbates(surface, dim_x, dim_y, site_types, voltage):
+    
+    ## Look through all sites (not bridge sites yet) by index
+    for site_x, site_y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:
+        
+        ## Look through all adsorbates and their respective adsorption sites
+        for ads, site_type in [(ads, site_types[ads]) for ads in ["H", "COOH", "OH", "O"]]: 
+            #print(site_x, site_y, ads, site_type)
+            
+            # Make the decision to adsorb/desorb or do nothing with this function:
+            surface = decision_to_leave(surface, site_x, site_y, ads, site_type, voltage)
+    
+    return surface
+
+def decision_to_leave(surface, site_x, site_y, ads, site_type, voltage):
+    ## Figure out if anything should be ad or desorbed
+    
+    # Is the adsorbate sitting at the site already?
+    contents_of_site = surface[site_type][site_x][site_y]
+    #is_ads_there = contents_of_site != "empty"
+    
+    # Should the adsorbate be there? #tested, seems to work
+    V_border = surface[ads+"_V"][site_x][site_y]
+    
+    # H adsorbs when the voltage is BELOW the border voltage
+    if ads == "H":
+        supposed_to = voltage < V_border
+    
+    # COOH adsorbs when the voltage is ABOVE the border voltage
+    if ads in ["COOH", "OH", "O"]:
+        supposed_to = voltage > V_border
+    
+    # IFF the site is empty AND the adsorbate is supposed to be there, ADSORB
+    if (contents_of_site == "empty") and (supposed_to == True): #Should check if the adsorbate there is == the adsorbate we're looking at
+        # Adsorb
+        surface[site_type][site_x][site_y] = ads
+        
+        # Save line to log file
+        append_to_log_file(log_folder + simulation_name + ".csv", [ads, "adsorb", surface[ads+"_G"][site_x, site_y], surface[ads+"_V"][site_x, site_y], voltage, site_x, site_y, site_type, time.time() - start_time])
+    
+    # IFF the adsorbate is sitting at the site, and it shouldn't be, DESORB
+    if (contents_of_site == ads) and (supposed_to == False): #ahh, this line made OH try to remove a COOH
+        # Desorb
+        surface[site_type][site_x][site_y] = "empty"
+        
+        # Save line to log file
+        append_to_log_file(log_folder + simulation_name + ".csv", [ads, "desorption", surface[ads+"_G"][site_x, site_y], surface[ads+"_V"][site_x, site_y], voltage, site_x, site_y, site_type, time.time() - start_time])
+    return surface
+
+def shuffle(liste):
+    #Shuffle the list
+    random.shuffle(liste)
+    return liste
+
+def neighbours(surface, x, y, x_diff, y_diff):
+    Top_site = surface["ads_top"][x][y]
+    FCC_neighbour = surface["ads_hol"][(x + x_diff) % dim_x][(y + y_diff) % dim_y]
+    
+    if Top_site == "COOH" and FCC_neighbour == "H":
+        return True
+    else:
+        return False
+    
+def reaction_CO(surface, x, y, x_diff, y_diff): #So I need another 2 functions like this: CO + O -> CO2 and CO + OH -> CO2 + 
+    # Remove the *COOH
+    surface["ads_top"][x][y] = "empty"
+    append_to_log_file(log_folder + simulation_name + ".csv", ["COOH", "Make CO reaction", surface["COOH_G"][x, y], surface["COOH_V"][x, y], voltage, x, y, "ads_top", time.time() - start_time])
+    
+    # Remove the *H
+    surface["ads_hol"][x+x_diff][y+y_diff] = "empty"
+    append_to_log_file(log_folder + simulation_name + ".csv", ["H", "Make CO reaction", surface["H_G"][x, y], surface["H_V"][x, y], voltage, x, y, "ads_hol", time.time() - start_time])
+     
+    # Put a *CO instead of *COOH
+    surface["ads_top"][x][y] = "CO"
+    append_to_log_file(log_folder + simulation_name + ".csv", ["CO", "Make CO reaction", "n/a", "n/a", voltage, x+x_diff, y+y_diff, "ads_top", time.time() - start_time])
+    
+    return surface
+
+def decision_to_react_CO(surface):
+
+    # Look through all on-top sites for COOH species:
+    for x, y in shuffle([(x, y) for x in range(dim_x) for y in range(dim_y)]): # Mixed order
+        for x_diff, y_diff in shuffle([(0, 0), (0, -1), (-1, 0)]):             # Mixed order
+
+            if neighbours(surface, x, y, x_diff, y_diff): #Are there H + COOH neighbours?
+
+                surface = reaction_CO(surface, x, y, x_diff, y_diff)
+                
+                # Tjek - er det mon her de to/tre nye reaktioner skal tilføjes?
+    return surface     
+
+def decision_to_react_O(surface):
+    # Look through all on-top sites for CO species:
+    for x, y in shuffle([(x, y) for x in range(dim_x) for y in range(dim_y)]): # Mixed order
+        for x_diff, y_diff in shuffle([(1, -1), (-1, -1), (-1, 1)]):           # Mixed order
+            
+            # If we find CO at the top-site x, y AND O at the x+x_diff, y+y_diff hollow_site: Remove both
+            if (surface["ads_top"][x][y] == "CO") and (surface["ads_hol"][(x+x_diff) % dim_x][(y+y_diff) % dim_y] == "O"):
+                
+                #REACTION HAPPENS
+                # REMOVE BOTH ADSORBATES AND WRITE LOGS
+                # Remove the *CO
+                surface["ads_top"][x][y] = "empty"
+                append_to_log_file(log_folder + simulation_name + ".csv", ["CO", "CO oxidation", "n/a", "n/a", voltage, x, y, "ads_top", time.time() - start_time])
+    
+                # Remove the *O
+                surface["ads_hol"][(x+x_diff) % dim_x][(y+y_diff) % dim_y] = "empty"
+                append_to_log_file(log_folder + simulation_name + ".csv", ["O", "CO oxidation", "n/a", "n/a", voltage, (x+x_diff) % dim_x, (y+y_diff) % dim_y, "ads_hol", time.time() - start_time])
+     
+    return surface
+
+#### FUNCTIONS FOR STATISTICS AND DATA VISUALIZATION FOR COVERAGE SIMULATIONS ####
+
+def count_pairs(surface):
+    '''This founction looks through a surface and returns the number of COOH + H pairs.
+    It loops through all on-top sites, if there is a COOH, it looks at the neighbouring FCC sites
+    If there'''
+    pairs = 0
+    # Look through all on-top sites for COOH species:
+    for x, y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:
+        # Is there a COOH?
+        if surface["ads_top"][x][y] == "COOH":
+            # Are there any H on the neighbouring positions?
+            for x_diff, y_diff in [(0, 0), (0, -1), (-1, 0)]:
+                FCC_neighbour = surface["ads_hol"][(x + x_diff) % dim_x][(y + y_diff) % dim_y]
+                if FCC_neighbour == "H":
+                    pairs += 1          
+    return pairs
+
+def count_statistics(surface, voltage, statistics_log): # Should I input and return the statistics log each time or just append to it from inside the function? That's probably the way.
+    '''This function counts some important metrics on the surface'''
+    ## Log the voltage
+    statistics_log["voltages"].append(voltage)
+    
+    ## Count number of the different adsorbates:
+    # Count H adsorbates
+    statistics_log["n_H"].append(np.count_nonzero(surface["ads_hol"] == 'H'))
+    
+    # Count COOH adsorbates
+    statistics_log["n_COOH"].append(np.count_nonzero(surface["ads_top"] == 'COOH'))
+    
+    # Count COOH adsorbates
+    statistics_log["n_OH"].append(np.count_nonzero(surface["ads_top"] == 'OH'))
+    
+    # Count COOH adsorbates
+    statistics_log["n_O"].append(np.count_nonzero(surface["ads_hol"] == 'O'))
+    
+    # Count CO adsorbates
+    statistics_log["n_CO"].append(np.count_nonzero(surface["ads_top"] == 'CO'))
+    
+    # Count H + COOH pairs
+    statistics_log["n_pairs"].append(count_pairs(surface))
+    
+    return statistics_log
+
+def initialize_statistics_log():
+    statistics_log = {"voltages": [], "n_H": [], "n_COOH": [], "n_OH": [], "n_O": [], "n_CO": [], "n_pairs": []}
+    return statistics_log
+
+def plot_statistics_log(statistics_log, simulation_name, mode):
+    fig, ax1 = plt.subplots()
+    plt.title('Coverage Simulation (H+COOH) (Simple)')
+    
+    # Plot data on ax1
+    line1 = ax1.plot(statistics_log["voltages"], statistics_log["n_H"], label="$^*H$", c="royalblue")
+    line2 = ax1.plot(statistics_log["voltages"], statistics_log["n_COOH"], label="$^*COOH$", c="cornflowerblue")
+    line3 = ax1.plot(statistics_log["voltages"], statistics_log["n_OH"], label="$^*OH$", c="orangered")
+    line4 = ax1.plot(statistics_log["voltages"], statistics_log["n_O"], label="$^*O$", c="red")
+    line5 = ax1.plot(statistics_log["voltages"], statistics_log["n_CO"], label="$^*CO$", c="black")
+    
+    ax1.set_xlabel('Voltage')
+    ax1.set_ylabel('Number of adsorbates', color='blue')
+    ax1.tick_params('y', colors='blue')
+    
+    #ax2 = ax1.twinx()
+    
+    #if mode == "pairs":
+    #    # Plot data on ax2
+    #    line5 = ax2.plot(statistics_log["voltages"], statistics_log["n_pairs"], label="$^*H$+$^*COOH$ pairs", c="tomato")
+    #    ax2.set_ylabel('Number of H+COOH pairs', color='tab:red')
+    #    lines = line1 + line2 + line3 + line4 + line5 
+    #    
+    #if mode == "CO":
+    #    line5 = ax2.plot(statistics_log["voltages"], statistics_log["n_CO"], label="$^*CO$", c="tomato")
+    #    ax2.set_ylabel('Number of $^*CO$ adsorbates', color='tab:red')
+    #    lines = line1 + line2 + line3 + line4 + line5 
+    #    
+    #if mode == "plain":
+    #    #do nothing (y)
+    #    lines = line1 + line2 + line3 + line4
+    #ax2.tick_params('y', colors='tab:red')
+    
+    # Combine the lines for the legend
+    lines = line1 + line2 + line3 + line4 + line5 
+    labels = [line.get_label() for line in lines]
+    ax1.legend(lines, labels, loc='upper left')
+    
+    plt.savefig("../figures/coverage_simulations/"+simulation_name+".png", dpi=300, bbox_inches="tight")
+    plt.show()
+    return None
+
+def plot_surface_composition(metals, surface):
+    ### SURFACE COMPOSITION ###
+    fig, ax_a = plt.subplots(1, 1, figsize = (6.4, 4.8))
+    composition, composition_string = surface_composition(metals, surface)
+    ymax = max(composition.values()) * 1.1
+    ax_a.set_ylim(0, ymax)
+    ax_a.set_title("Surface composition: " + composition_string)
+    ax_a.set_yticks([])
+    #ax.set_xticks([])
+    bar1 = ax_a.bar(composition.keys(), composition.values(), alpha = 0.9, color = ["silver", "gold", "darkorange", "lightsteelblue", "cornflowerblue"])
+    
+    for idx, rect in enumerate(bar1):
+        height = rect.get_height()
+        fraction = list(composition.values())[idx]*100
+        ax_a.text(rect.get_x() + rect.get_width() / 2.0, height, s = f"{fraction:.2f}" + " %", ha='center', va='bottom')
+    return None
+
+def surface_composition(metals, surface):
+    composition = {}
+    num_atoms = np.shape(surface)[0]*np.shape(surface)[1]*np.shape(surface)[2]
+    
+    for metal in metals:
+        composition[metal] = np.count_nonzero(surface == metal) / num_atoms
+        
+    # Lav en kemisk formel for overfladen og lav subskript med deres fractions
+    composition_string = ""
+
+    for metal in metals:
+        if composition[metal] > 0:
+            composition_string += str(metal) + f"$_{{{composition[metal]:.2f}}}$"
+    return composition, composition_string
