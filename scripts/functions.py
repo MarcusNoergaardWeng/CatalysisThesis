@@ -11,6 +11,7 @@ import xgboost as xgb
 from xgboost import XGBRegressor
 import time
 import random
+import csv
 #from skopt import gp_minimize
 from ase.db import connect
 
@@ -62,6 +63,9 @@ molecules_dict = {'CO': -12.848598765234707,\
  'C2H6O': -43.67355392866396,\
  'C2H2O2': -32.92328015484662,\
  'C2H2O4': -44.117581976029946}
+
+# Folder paths
+log_folder = "../Coverage_logs/"
 
 #### LAOADING AND PREPARING FEATURES DATA FROM CSV FILES ####
 
@@ -1115,6 +1119,10 @@ def initialize_surface(dim_x, dim_y, metals, split): #Is still random - could be
     
     surf_atoms = create_surface(dim_x, dim_y, metals, split)
     
+    # Adsorbates
+    surf_ads_top = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+    surf_ads_hol = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+
     # Binding energies
     surf_COOH_G = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
     surf_H_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
@@ -1127,6 +1135,7 @@ def initialize_surface(dim_x, dim_y, metals, split): #Is still random - could be
     stochiometry = dict(zip(metals, np.array(split)/np.sum(split)))
     
     surf = {"atoms": surf_atoms, "stochiometry": stochiometry,\
+            "ads_top": surf_ads_top, "ads_hol": surf_ads_hol, \
             "COOH_G": surf_COOH_G, "H_G": surf_H_G, "mixed_down": surf_COOH_down, "mixed_up_right": surf_COOH_up_right, "mixed_up_left": surf_COOH_up_left}
     return surf
 
@@ -1145,6 +1154,7 @@ def create_surface(dim_x, dim_y, metals, split):
     return surface
 
 def precompute_binding_energies_TQDM(surface, dim_x, dim_y, models, predict_G_function): #TJEK I think this function can go faster if I make all the data first appended to a list, then to a PD and then 
+    """A good example of how NOT to write code. Replaced by the rewritten _SPEED version"""
     for x, y in tqdm([(x, y) for x in range(dim_x) for y in range(dim_y)], desc = r"Predicting all ΔG", leave = False): # I could randomise this, so I go through all sites in a random order
         
         ads = "H"
@@ -1155,54 +1165,8 @@ def precompute_binding_energies_TQDM(surface, dim_x, dim_y, models, predict_G_fu
 
     return surface
 
-def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD OH, H, mixed-site sådan at det kan bruges til coverage simulations
-    H_features    = []
-    COOH_features = []
-    
-    # ADD OH FEATURES TJEK
-    # ADD H FEATURES TJEK
-
-    # Make features for each site:
-    for x, y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:#, desc = r"Making all feature vectors", leave = True): # I could randomise this, so I go through all sites in a random order
-        # Append the features
-        H_features.append([hollow_site_vector(surface["atoms"], x, y)])
-        COOH_features.append([on_top_site_vector(surface["atoms"], x, y)])
-        #index_pairs.append([str(x)+","+str(y)])
-
-    # Remove the uneccesary singleton dimension
-    H_features = np.squeeze(H_features)
-    COOH_features = np.squeeze(COOH_features)
-
-    # Make the features into a big dataframe
-    H_features_df    = pd.DataFrame(H_features   , columns = [f"feature{n}" for n in range(55)])
-    COOH_features_df = pd.DataFrame(COOH_features, columns = [f"feature{n}" for n in range(20)])
-
-    # Turn them into DMatrix
-    H_features_DM    = pandas_to_DMatrix(H_features_df)
-    COOH_features_DM = pandas_to_DMatrix(COOH_features_df)
-
-    # Predict energies in one long straight line
-    H_G    = models["H"].predict(H_features_DM)       # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
-    COOH_G = models["COOH"].predict(COOH_features_DM) # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
-
-    # Make them into a nice matrix shape - in a minute
-    H_G    = np.reshape(H_G   , (dim_x, dim_y))
-    COOH_G = np.reshape(COOH_G, (dim_x, dim_y))
-    #index_pairs = np.reshape(index_pairs, (dim_x, dim_y))
-
-    # Attach the energies to the matrices in the surface dictionary
-    surface["H_G"]    = H_G
-    surface["COOH_G"] = COOH_G
-
-    # Predict the energies on the mixed sites
-    surface = predict_mixed_energies(surface, dim_x, dim_y, models)
-
-    # Calculate the "*COOH given *H" and "*H given *COOH" energies
-    surface = calc_given_energies(surface)
-
-    return surface
-
 def predict_G(surface, site_x, site_y, adsorbate, models):
+    """A good example of how NOT to write code. Replaced by the rewritten _SPEED version"""
     if adsorbate == "H":
         vector_df = pd.DataFrame([hollow_site_vector(surface, site_x, site_y)], columns = [f"feature{n}" for n in range(55)])
         vector_DM = pandas_to_DMatrix(vector_df)
@@ -1214,6 +1178,63 @@ def predict_G(surface, site_x, site_y, adsorbate, models):
         vector_DM = pandas_to_DMatrix(vector_df)
         G = models["COOH"].predict(vector_DM)[0]
         return G
+
+def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD OH, H, mixed-site sådan at det kan bruges til coverage simulations
+    hollow_features = [] # These features are the same for all hollow site adsorbates, hence these are made just once
+    on_top_features = []
+
+    # Make features for each site:
+    for x, y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:#, desc = r"Making all feature vectors", leave = True): # I could randomise this, so I go through all sites in a random order
+        # Append the features for the hollow site adsorbates: H and O
+        hollow_features.append([hollow_site_vector(surface["atoms"], x, y)])
+
+        # Append the features for the on-top site adsorbates: OH and COOH
+        on_top_features.append([on_top_site_vector(surface["atoms"], x, y)])
+
+    # Remove the uneccesary singleton dimension
+    hollow_features = np.squeeze(hollow_features)
+    on_top_features = np.squeeze(on_top_features)
+
+    # Make the features into a big dataframe
+    hollow_features_df = pd.DataFrame(hollow_features, columns = [f"feature{n}" for n in range(55)])
+    on_top_features_df = pd.DataFrame(on_top_features, columns = [f"feature{n}" for n in range(20)])
+
+    # Turn them into DMatrix
+    hollow_features_DM = pandas_to_DMatrix(hollow_features_df)
+    on_top_features_DM = pandas_to_DMatrix(on_top_features_df)
+
+    # Predict energies in one long straight line
+    H_G    = models["H"].predict(hollow_features_DM) # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
+    O_G    = models["O"].predict(hollow_features_DM)
+    COOH_G = models["COOH"].predict(on_top_features_DM) 
+    OH_G   = models["OH"].predict(on_top_features_DM)
+    
+    # Make them into a nice matrix shape - in a minute
+    H_G    = np.reshape(H_G   , (dim_x, dim_y))
+    O_G    = np.reshape(O_G   , (dim_x, dim_y))
+    COOH_G = np.reshape(COOH_G, (dim_x, dim_y))
+    OH_G   = np.reshape(OH_G   , (dim_x, dim_y))
+
+    # Attach the energies to the matrices in the surface dictionary
+    surface["H_G"]    = H_G
+    surface["O_G"]    = H_G
+    surface["COOH_G"] = COOH_G
+    surface["OH_G"]   = OH_G
+
+    # Calculate and attach the border voltages
+    
+    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_G"]   )
+    surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_G"]   )
+    surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_G"])
+    surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_G"]  )
+
+    # Predict the energies on the mixed sites
+    surface = predict_mixed_energies(surface, dim_x, dim_y, models)
+
+    # Calculate the "*COOH given *H" and "*H given *COOH" energies
+    surface = calc_given_energies(surface)
+
+    return surface
     
 def on_top_site_vector(surface, site_x, site_y): # I should have done modulo to dim_x and dim_y
     dim_x, dim_y = np.shape(surface)[0], np.shape(surface)[1]
@@ -1511,44 +1532,45 @@ def return_mae(model_name, X_test, y_test_series): #Returns MAE on test set for 
 
 #### RUNNING COVERAGE SIMULATIONS BASED ON SURFACE AND G PREDICTION MODELS ####
 
-def initialize_surface_coverage_simulation(dim_x, dim_y, metals, split): #Is still random - could be used with a seed in the name of reproduceability
-    dim_z = 3
-    #surface_list = np.array([int(dim_x*dim_y*dim_z/len(metals))*[metals[metal_number]] for metal_number in range(len(metals))]).flatten() #Jack had a way shorter way of doing this, but I think it was random drawing instead of ensuring a perfectly even split
-    #np.random.shuffle(surface_list) #Shuffle list
-    #surf_atoms = np.reshape(surface_list, (dim_x, dim_y, dim_z)) #Reshape list to the
-    
-    surf_atoms = create_surface(dim_x, dim_y, metals, split)
-    
-    # Adsorbates
-    surf_ads_top = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
-    surf_ads_hol = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
-    
-    # Binding energies
-    surf_COOH_G = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
-    surf_H_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
-    surf_OH_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
-    surf_O_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
-    
-    # Ad/desorbs at voltage (At which voltage is the binding energy 0?)
-    surf_COOH_V = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
-    surf_H_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
-    surf_OH_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
-    surf_O_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# # Hollow sites
-    
-    surf = {"atoms": surf_atoms, "ads_top": surf_ads_top, "ads_hol": surf_ads_hol, \
-            "COOH_G": surf_COOH_G, "H_G": surf_H_G, "OH_G": surf_OH_G, \
-            "O_G": surf_O_G, "COOH_V": surf_COOH_V, "H_V": surf_H_V, \
-            "OH_V": surf_OH_V, "O_V": surf_O_V} #This line had a but that took me two days to find... Pass by reference is such a smart feature (y)
-    return surf
+#def initialize_surface_coverage_simulation(dim_x, dim_y, metals, split): #Is still random - could be used with a seed in the name of reproduceability
+#    dim_z = 3
+#    #surface_list = np.array([int(dim_x*dim_y*dim_z/len(metals))*[metals[metal_number]] for metal_number in range(len(metals))]).flatten() #Jack had a way shorter way of doing this, but I think it was random drawing instead of ensuring a perfectly even split
+#    #np.random.shuffle(surface_list) #Shuffle list
+#    #surf_atoms = np.reshape(surface_list, (dim_x, dim_y, dim_z)) #Reshape list to the
+#    
+#    surf_atoms = create_surface(dim_x, dim_y, metals, split)
+#    
+#    # Adsorbates
+#    surf_ads_top = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+#    surf_ads_hol = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
+#    
+#    # Binding energies
+#    surf_COOH_G = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # On-top sites
+#    surf_H_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # Hollow sites
+#    surf_OH_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+#    surf_O_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # Hollow sites
+#    
+#    # Ad/desorbs at voltage (At which voltage is the binding energy 0?)
+#    surf_COOH_V = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # On-top sites
+#    surf_H_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # Hollow sites
+#    surf_OH_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+#    surf_O_V    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y)) # Hollow sites
+#    
+#    surf = {"atoms": surf_atoms, "ads_top": surf_ads_top, "ads_hol": surf_ads_hol, \
+#            "COOH_G": surf_COOH_G, "H_G": surf_H_G, "OH_G": surf_OH_G, \
+#            "O_G": surf_O_G, "COOH_V": surf_COOH_V, "H_V": surf_H_V, \
+#            "OH_V": surf_OH_V, "O_V": surf_O_V} #This line had a but that took me two days to find... Pass by reference is such a smart feature (y)
+#    return surf
 
 def voltage_sweep(start, end, scan_rate):
     return np.linspace(start, end, int(np.abs(start - end) / scan_rate))
 
-def calc_V_border(ads, G):
-    """This function returns the border-voltage, at which the adsorbate adsorbs or desorbs"""
+def calc_V_border(ads, G): # TJEK use this in an efficient way in the precompute speed function. Should take in a matrix and do the operation as a matrix calculation thing.
+    """This function returns the border-voltage, at which the adsorbate adsorbs or desorbs
+    I think I can just pass whole numpy arrays through this"""
     
     if ads == "H":
-        V_border = - G  # Lille boost #+ 0.7 # HER sætter jeg lige et boost ind, for at tjekke, om det fungerer, når *CO-reaktionen sker
+     V_border = - G  # Lille boost #+ 0.7 # HER sætter jeg lige et boost ind, for at tjekke, om det fungerer, når *CO-reaktionen sker
     if ads == "COOH":
         V_border = G # TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
     if ads == "OH":
@@ -1570,7 +1592,7 @@ def append_to_log_file(file_name, data):
         writer.writerow(data)
     return None
 
-def look_at_all_sites_and_adsorbates(surface, dim_x, dim_y, site_types, voltage):
+def look_at_all_sites_and_adsorbates(simulation_name, surface, dim_x, dim_y, site_types, voltage, start_time):
     
     ## Look through all sites (not bridge sites yet) by index
     for site_x, site_y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:
@@ -1580,11 +1602,11 @@ def look_at_all_sites_and_adsorbates(surface, dim_x, dim_y, site_types, voltage)
             #print(site_x, site_y, ads, site_type)
             
             # Make the decision to adsorb/desorb or do nothing with this function:
-            surface = decision_to_leave(surface, site_x, site_y, ads, site_type, voltage)
+            surface = decision_to_leave(simulation_name, surface, site_x, site_y, ads, site_type, voltage, start_time)
     
     return surface
 
-def decision_to_leave(surface, site_x, site_y, ads, site_type, voltage):
+def decision_to_leave(simulation_name, surface, site_x, site_y, ads, site_type, voltage, start_time):
     ## Figure out if anything should be ad or desorbed
     
     # Is the adsorbate sitting at the site already?
