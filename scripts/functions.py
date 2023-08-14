@@ -1572,11 +1572,11 @@ def calc_V_border(ads, G): # TJEK use this in an efficient way in the precompute
     if ads == "H":
      V_border = - G  # Lille boost #+ 0.7 # HER sætter jeg lige et boost ind, for at tjekke, om det fungerer, når *CO-reaktionen sker
     if ads == "COOH":
-        V_border = G # TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
+        V_border = G -0.3 # TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
     if ads == "OH":
-        V_border = G # Hvad er funktionen? Det samme som for COOH?
+        V_border = G + 0.5 # TJEK BOOST            # Hvad er funktionen? Det samme som for COOH?
     if ads == "O":
-        V_border = G/2 # Hvad er funktionen? Her hopper 2 elektroner af, så der sker noget andet
+        V_border = G/2+ 0.5 # TJEK BOOST          # Hvad er funktionen? Her hopper 2 elektroner af, så der sker noget andet
     
     return V_border
 
@@ -1655,7 +1655,7 @@ def neighbours(surface, x, y, x_diff, y_diff):
     else:
         return False
     
-def reaction_CO(surface, x, y, x_diff, y_diff): #So I need another 2 functions like this: CO + O -> CO2 and CO + OH -> CO2 + 
+def reaction_CO(surface, x, y, x_diff, y_diff, voltage, start_time, simulation_name): #So I need another 2 functions like this: CO + O -> CO2 and CO + OH -> CO2 + 
     # Remove the *COOH
     surface["ads_top"][x][y] = "empty"
     append_to_log_file(log_folder + simulation_name + ".csv", ["COOH", "Make CO reaction", surface["COOH_G"][x, y], surface["COOH_V"][x, y], voltage, x, y, "ads_top", time.time() - start_time])
@@ -1670,7 +1670,7 @@ def reaction_CO(surface, x, y, x_diff, y_diff): #So I need another 2 functions l
     
     return surface
 
-def decision_to_react_CO(surface):
+def decision_to_react_CO(surface, voltage, start_time, simulation_name):
 
     # Look through all on-top sites for COOH species:
     for x, y in shuffle([(x, y) for x in range(dim_x) for y in range(dim_y)]): # Mixed order
@@ -1678,12 +1678,12 @@ def decision_to_react_CO(surface):
 
             if neighbours(surface, x, y, x_diff, y_diff): #Are there H + COOH neighbours?
 
-                surface = reaction_CO(surface, x, y, x_diff, y_diff)
+                surface = reaction_CO(surface, x, y, x_diff, y_diff, voltage, start_time, simulation_name)
                 
                 # Tjek - er det mon her de to/tre nye reaktioner skal tilføjes?
     return surface     
 
-def decision_to_react_O(surface):
+def decision_to_react_O(surface, voltage, start_time, simulation_name):
     # Look through all on-top sites for CO species:
     for x, y in shuffle([(x, y) for x in range(dim_x) for y in range(dim_y)]): # Mixed order
         for x_diff, y_diff in shuffle([(1, -1), (-1, -1), (-1, 1)]):           # Mixed order
@@ -1696,7 +1696,7 @@ def decision_to_react_O(surface):
                 # Remove the *CO
                 surface["ads_top"][x][y] = "empty"
                 append_to_log_file(log_folder + simulation_name + ".csv", ["CO", "CO oxidation", "n/a", "n/a", voltage, x, y, "ads_top", time.time() - start_time])
-    
+                
                 # Remove the *O
                 surface["ads_hol"][(x+x_diff) % dim_x][(y+y_diff) % dim_y] = "empty"
                 append_to_log_file(log_folder + simulation_name + ".csv", ["O", "CO oxidation", "n/a", "n/a", voltage, (x+x_diff) % dim_x, (y+y_diff) % dim_y, "ads_hol", time.time() - start_time])
