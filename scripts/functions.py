@@ -322,7 +322,7 @@ def features_from_DFT_data_H_and_COOH(features_folder, db_folder, db_name_H, db_
         column_names.append('slab db row')
         column_names.append(f'{db_name_H}row')
         file_H.write(",".join(column_names))
-        
+
     # Writer headers to files
     with open(f'{features_folder}{feature_file_COOH}', 'w') as file_COOH:
         column_names = [f"feature{n}" for n in range(20)]
@@ -330,7 +330,7 @@ def features_from_DFT_data_H_and_COOH(features_folder, db_folder, db_name_H, db_
         column_names.append('slab db row')
         column_names.append(f'{db_name_COOH}row')
         file_COOH.write(",".join(column_names))
-        
+
     # Load HEA(111) or Swim rings databases
     with connect(f'{db_folder}{db_name_H}') as db_H,\
         connect(f'{db_folder}{db_name_COOH}') as db_COOH,\
@@ -467,7 +467,8 @@ def correct_DFT_energy_COOH_H(molecules_dict, E_HplusCOOH, E_slab):
     DeltaE = E_HplusCOOH - molecules_dict["CH2O2"] - E_slab
     correction_constant_COOH_H = calc_correction_constant_H_COOH(AF)
     DeltaG = DeltaE + correction_constant_COOH_H
-    return DeltaG
+    #return DeltaG
+    return DeltaE
 
 def calc_correction_constant_COOH(AF):
     ### Summing up all the Approximation Factors for COOH
@@ -481,7 +482,8 @@ def correct_DFT_energy_COOH(molecules_dict, E_COOH, E_slab):
     DeltaE = E_COOH - molecules_dict["CH2O2"] + 1/2*molecules_dict["H2"] - E_slab
     correction_constant_COOH = calc_correction_constant_COOH(AF)
     DeltaG = DeltaE + correction_constant_COOH
-    return DeltaG
+    #return DeltaG
+    return DeltaE
 
 def calc_correction_constant_H(AF):
     ### Summing up all the Approximation Factors for H
@@ -495,7 +497,24 @@ def correct_DFT_energy_H(molecules_dict, E_H, E_slab):
     DeltaE = E_H - 1/2*molecules_dict["H2"] - E_slab
     correction_constant_H = calc_correction_constant_H(AF)
     DeltaG = DeltaE + correction_constant_H
-    return DeltaG
+    #return DeltaG
+    return DeltaE
+
+def calc_correction_constant_O(AF):
+    ### Summing up all the Approximation Factors for O
+    ZpE_sum  = AF["bound_O"]["ZPE"]  - AF["H2O"]["ZPE"]  + AF["H2"]["ZPE"]
+    CpdT_sum = AF["bound_O"]["CpdT"] - AF["H2O"]["CpdT"] + AF["H2"]["CpdT"]
+    TS_sum   = AF["bound_O"]["TS"]   - AF["H2O"]["TS"]   + AF["H2"]["TS"]
+    correction_constant_O = ZpE_sum + CpdT_sum - TS_sum
+    return correction_constant_O
+
+def calc_correction_constant_OH(AF):
+    ### Summing up all the Approximation Factors for OH
+    ZpE_sum  = AF["bound_OH"]["ZPE"]  - AF["H2O"]["ZPE"]  + 1/2*AF["H2"]["ZPE"]
+    CpdT_sum = AF["bound_OH"]["CpdT"] - AF["H2O"]["CpdT"] + 1/2*AF["H2"]["CpdT"]
+    TS_sum   = AF["bound_OH"]["TS"]   - AF["H2O"]["TS"]   + 1/2*AF["H2"]["TS"]
+    correction_constant_OH = ZpE_sum + CpdT_sum - TS_sum
+    return correction_constant_OH
 
 #### MAKE SWIM RING SURFACE ####
 
@@ -550,54 +569,63 @@ def load_G_models():
     """"This function loads the current best binding energy (G) prediction models trained on 
     both HEA (High-Entropy Alloy) and SWR (Swim-Ring) data.
     Except for CO, that I only have data on for the HEA slabs"""
-
+    DeltaE_path = "../Models/DeltaE/"
     # Load H binding energy (G) prediction model - Trained on HEA and SWR data
     H_HEA_SWR_model = xgb.Booster({'nthread': 8})
-    H_HEA_SWR_model.load_model("../Models/"+"H_HEA_SWR.model")
+    H_HEA_SWR_model.load_model(DeltaE_path+"H_HEA_SWR.model")
 
     # Load COOH binding energy (G) prediction model - Trained on HEA and SWR data
     COOH_HEA_SWR_model = xgb.Booster({'nthread': 8})
-    COOH_HEA_SWR_model.load_model("../Models/"+"COOH_HEA_SWR.model")
+    COOH_HEA_SWR_model.load_model(DeltaE_path+"COOH_HEA_SWR.model")
 
     # Load mixed site energy (G)  prediction model - Trained on HEA and SWR data
     mixed_HEA_SWR_model = xgb.Booster({'nthread': 8})
-    mixed_HEA_SWR_model.load_model("../Models/"+"COOH_H_HEA_SWR.model")
+    mixed_HEA_SWR_model.load_model(DeltaE_path+"COOH_H_HEA_SWR.model")
 
     ## Load models used only for the coverage simulations
 
-    # Load CO binding energy (G) prediction - Trained on HEA data - Not being used at the moment though
-    CO_model = xgb.Booster({'nthread': 8})
-    CO_model.load_model("../Models/"+"CO_HEA.model")
-
     # Load OH binding energy (G) prediction model - Trained on HEA data
     OH_model = xgb.Booster({'nthread': 8})
-    OH_model.load_model("../Models/Old_models/"+"OH.model")
+    OH_model.load_model(DeltaE_path+"OH_HEA.model")
 
     # Load OH binding energy (G) prediction model - Trained on HEA data
     O_model = xgb.Booster({'nthread': 8})
-    O_model.load_model("../Models/Old_models/"+"O.model")
+    O_model.load_model(DeltaE_path+"O_HEA.model")
 
     ## Load OLD models only trained on HEA data
 
     # Load old H binding energy (G) model - Trained on HEA data only
-    H_HEA_model = xgb.Booster({'nthread': 8})
-    H_HEA_model.load_model("../Models/"+"H_HEA.model")
+    #H_HEA_model = xgb.Booster({'nthread': 8})
+    #H_HEA_model.load_model(DeltaG_path+"H_HEA.model")
 
     # Load old COOH binding energy (G) model - Trained on HEA data only
-    COOH_HEA_model = xgb.Booster({'nthread': 8})
-    COOH_HEA_model.load_model("../Models/"+"COOH_HEA.model")
+    #COOH_HEA_model = xgb.Booster({'nthread': 8})
+    #COOH_HEA_model.load_model(DeltaG_path+"COOH_HEA.model")
 
     # Load old H+COOH binding energy (G) model - Trained on HEA data only
-    mixed_HEA_model = xgb.Booster({'nthread': 8})
-    mixed_HEA_model.load_model("../Models/"+"COOH_H_HEA.model")
+    #mixed_HEA_model = xgb.Booster({'nthread': 8})
+    #mixed_HEA_model.load_model(DeltaG_path+"COOH_H_HEA.model")
 
     models = {"H": H_HEA_SWR_model, "COOH": COOH_HEA_SWR_model, \
               "mixed": mixed_HEA_SWR_model, \
-              "CO": CO_model, "OH": OH_model, "O": O_model, \
-              "H_old": H_HEA_model, "COOH_old": COOH_HEA_model, "mixed_old": mixed_HEA_model}
+              "OH": OH_model, "O": O_model}
+              #"H_old": H_HEA_model, "COOH_old": COOH_HEA_model, "mixed_old": mixed_HEA_model}
     return models
 
 models = load_G_models() # I think I have to load it in here in order for the bayesian optimization scheme to work. I can't pass stuff to the functions
+
+#### LOAD CORRECTIONS ####
+
+def load_corrections():
+    corrections = {
+        "H_COOH": calc_correction_constant_H_COOH(AF), \
+        "COOH": calc_correction_constant_COOH(AF), \
+        "H": calc_correction_constant_H(AF), \
+        "OH": calc_correction_constant_OH(AF), \
+        "O": calc_correction_constant_O(AF)}
+    return corrections
+
+corrections = load_corrections()
 
 #### BAYESIAN OPTIMIZATION ROUTINE ####
 
@@ -1353,8 +1381,8 @@ def learning_curve(model, model_name): #For regressor
     plt.xlabel("Epoch")
     plt.ylabel('Log Loss')
     plt.title('XGBoost Loss curve')
-    figure_folder = "../figures/Loss_curves/"
-    plt.savefig(figure_folder + model_name, dpi = 300, bbox_inches = "tight")
+    figure_folder = "../figures/Loss_curves/DeltaE/"
+    plt.savefig(figure_folder + model_name + "_Loss_Curve", dpi = 300, bbox_inches = "tight")
     plt.show()
     return None
 
@@ -1402,31 +1430,31 @@ def single_parity_plot(model, model_name, X_test, y_test_series, training_data, 
     
     if adsorbate == "O":
         ax1.scatter(y_test_series, model_predictions, s = 20, c = "tab:red", label = "Adsorbate: O", marker = "$O$")
-        ax1.set_title(model_type_title + " model predictions of $\Delta G_{*O}^{DFT} (eV)$ \n Training data: " + training_data)
+        ax1.set_title(model_type_title + " model predictions of $\Delta E_{*O}^{DFT} (eV)$")
         
     if adsorbate == "OH":
         ax1.scatter(y_test_series, model_predictions, s = 60, c = "tab:blue", label = "Adsorbate: OH", marker = "$OH$")
-        ax1.set_title(model_type_title + " model predictions of $\Delta G_{*OH}^{DFT} (eV)$")
+        ax1.set_title(model_type_title + " model predictions of $\Delta E_{*OH}^{DFT} (eV)$")
     
     if adsorbate == "H":
         ax1.scatter(y_test_series, model_predictions, s = 20, c = "tab:green", label = "Adsorbate: H", marker = "$H$")
-        ax1.set_title(model_type_title + " model predictions of $\Delta G_{*H}^{DFT} (eV)$")
+        ax1.set_title(model_type_title + " model predictions of $\Delta E_{*H}^{DFT} (eV)$")
 
     if adsorbate == "COOH":
         ax1.scatter(y_test_series, model_predictions, s = 20, c = "cornflowerblue", label = "Adsorbate: COOH", marker = "x")
-        ax1.set_title(model_type_title + " model predictions of $\Delta G_{*COOH}^{DFT} (eV)$")
+        ax1.set_title(model_type_title + " model predictions of $\Delta E_{*COOH}^{DFT} (eV)$")
     
     if adsorbate == "COOH+H":
         ax1.scatter(y_test_series, model_predictions, s = 20, c = "seagreen", label = "Adsorbate: COOH+H", marker = "x")
-        ax1.set_title(model_type_title + " model predictions of $\Delta G_{*COOH+*H}^{DFT} (eV)$")
+        ax1.set_title(model_type_title + " model predictions of $\Delta E_{*COOH+*H}^{DFT} (eV)$")
 
     
     if adsorbate == "CO":
         ax1.scatter(y_test_series, model_predictions, s = 60, c = "orangered", label = "Adsorbate: CO", marker = "$CO$")
         ax1.set_title(model_type_title + " model predictions of $\Delta G_{*CO}^{DFT} (eV)$")
     
-    ax1.set_xlabel("$\Delta G_{*Adsorbate}^{DFT} (eV)$")
-    ax1.set_ylabel("$\Delta G_{*Adsorbate}^{Pred} (eV)$")
+    ax1.set_xlabel("$\Delta E_{*Adsorbate}^{DFT} (eV)$")
+    ax1.set_ylabel("$\Delta E_{*Adsorbate}^{Pred} (eV)$")
     
     ax1.text(0.8, 2.4, f"MAE(test) = {MAE:.3f}", color="deepskyblue", fontweight='bold', fontsize = 12)
     
@@ -1480,7 +1508,7 @@ def single_parity_plot(model, model_name, X_test, y_test_series, training_data, 
     
     ax1.plot(lims, lims,
             lw=lw, color='black', zorder=1,
-            label=r'$\rm \Delta G_{pred} = \Delta G_{DFT}$')
+            label=r'$\rm \Delta E_{pred} = \Delta E_{DFT}$')
     
     # Make plus/minus 0.1 eV lines around y = x
     ax1.plot(lims, [lims[0]+pm, lims[1]+pm],
@@ -1502,7 +1530,7 @@ def single_parity_plot(model, model_name, X_test, y_test_series, training_data, 
     
     #plt.savefig(figure_folder + "Parity_trained_OH_tested_BOTH.png", dpi = 300, bbox_inches = "tight")
     # Save figure with a random name, rename later
-    figure_folder = "../figures/DeltaG_models/"
+    figure_folder = "../figures/DeltaG_models/DeltaE/"
     plt.savefig(figure_folder + model_name, dpi = 300, bbox_inches = "tight")
     #plt.savefig(figure_folder + str(time.time())[6:10]+str(time.time())[11:15], dpi = 300, bbox_inches = "tight")
     plt.show()
