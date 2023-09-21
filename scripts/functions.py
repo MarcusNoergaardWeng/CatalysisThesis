@@ -537,8 +537,11 @@ def make_long_vector(A, B, vector_length): # Tested, works
     long_vector[2::3] = [random.choice(B) for _ in range(vector_length // 3)]
     return long_vector
 
-def initialize_swim_surface(A, B): # Tested, works
+def initialize_swim_surface(A, B, dim_x, dim_y): # Tested, works
     # Make the split from the metals used
+    # A and B should be lists of the metals present in the swim rings and the insides
+    # A is inside the swim rings and B is the swim rings
+    # Soo this function doesn't ensure swim rings, it just makes a random mixture
     split = AB_to_split(A, B)
 
     # Make the surface (empty surface)
@@ -560,12 +563,12 @@ def initialize_swim_surface(A, B): # Tested, works
     surface["atoms"][:,:,0] = top_layer
 
     # Predict energies on all sites for both adsorbates
-    surface = precompute_binding_energies_SPEED(surface, dim_x, dim_y, models)
+    #surface = precompute_binding_energies_SPEED(surface, dim_x, dim_y, models)
     return surface
 
 #### LOAD BINDING ENERGY MODELS ####
 
-def load_G_models():
+def load_E_models():
     """"This function loads the current best binding energy (G) prediction models trained on 
     both HEA (High-Entropy Alloy) and SWR (Swim-Ring) data.
     Except for CO, that I only have data on for the HEA slabs"""
@@ -612,7 +615,7 @@ def load_G_models():
               #"H_old": H_HEA_model, "COOH_old": COOH_HEA_model, "mixed_old": mixed_HEA_model}
     return models
 
-models = load_G_models() # I think I have to load it in here in order for the bayesian optimization scheme to work. I can't pass stuff to the functions
+models = load_E_models() # I think I have to load it in here in order for the bayesian optimization scheme to work. I can't pass stuff to the functions
 
 #### LOAD CORRECTIONS ####
 
@@ -626,6 +629,48 @@ def load_corrections():
     return corrections
 
 corrections = load_corrections()
+
+#### LOAD PURE METAL ENERGIES ####
+
+def load_SE_energies():
+    DFT_folder = "../DFT_data/"
+    # The COOH Pt data is in "single_element_COOH_C_adsorbed_out.db"
+    db_name_SE_COOH = "single_element_COOH_C_adsorbed_out.db"
+    # THe H data is in "single_element_H_out.db"
+    db_name_SE_H = "single_element_H_out.db"
+    db_name_SE = "single_element_slabs_out.db"
+
+    SE_COOH_metals = []
+    SE_COOH_energies = []
+
+    with connect(f'{DFT_folder}{db_name_SE_COOH}') as db_COOH:
+        for row_slab in db_COOH.select('energy'):
+            SE_COOH_energies.append(row_slab.energy)
+            SE_COOH_metals.append(row_slab.formula[0:2])
+
+    SE_H_metals = []
+    SE_H_energies = []
+
+    with connect(f'{DFT_folder}{db_name_SE_H}') as db_H:
+        for row_slab in db_H.select('energy'):
+            SE_H_energies.append(row_slab.energy)
+            SE_H_metals.append(row_slab.formula[0:2])
+    
+    SE_slab_metals = []
+    SE_slab_energies = []
+
+    with connect(f'{DFT_folder}{db_name_SE}') as db_slab:
+        for row_slab in db_slab.select('energy'):
+            SE_slab_energies.append(row_slab.energy)
+            SE_slab_metals.append(row_slab.formula[0:2])
+
+    DeltaE_COOH = np.array(SE_COOH_energies) - molecules_dict["CH2O2"] + 1/2*molecules_dict["H2"] - np.array(SE_slab_energies)
+    DeltaE_H    = np.array(SE_H_energies) - np.array(SE_slab_energies) - 1/2*molecules_dict["H2"]
+
+    pure_metal_info = {"DeltaE_H": DeltaE_H, "DeltaE_COOH": DeltaE_COOH, "SE_slab_metals": SE_slab_metals}
+    return pure_metal_info
+
+pure_metal_info = load_SE_energies()
 
 #### BAYESIAN OPTIMIZATION ROUTINE ####
 
@@ -760,7 +805,7 @@ def plot_pure_metals(SE_slab_metals, DeltaG_H, DeltaG_COOH, metal_colors):
     ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
     ax.set_yticks([-0.5, 0, 0.5, 1.0])
     ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
-
+    
     # Set the grid lines
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
 
@@ -810,8 +855,8 @@ def sort_energies(surface, reward_type): # Just make it return everything all th
             y_hollow = (y_top + y_diff) % dim_y
             
             # What are the energies?
-            on_top_E = surface["COOH_G"][x_top][y_top]
-            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            on_top_E = surface["COOH_E"][x_top][y_top]
+            hollow_E = surface["H_E"][x_hollow][y_hollow]
             
             # Which atom is the top-site?
             top_site_atom = surface["atoms"][x_top, y_top, 0]
@@ -846,16 +891,17 @@ def sort_energies(surface, reward_type): # Just make it return everything all th
     return E_top_dict, E_hol_dict, good_hol_sites, n_ratios
 
 # Make this into a function! And make it save a nice plot. Perhaps ask for a name directly in the function-call
-def deltaEdeltaE_plot(filename, surface, pure_metal_info, reward_type, show_plot):
+def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_type, show_plot):
 
     # First, calculate the statistics of interest
     E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
 
     fig, ax = plt.subplots(figsize = (6, 6))
-    
+
     # Set the limits for both x and y axes
-    ax.set_xlim(-0.6, 1.1)
-    ax.set_ylim(-0.6, 1.1)
+    xmin, xmax, ymin, ymax = -0.6, 1.3, -0.6, 1.3
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
     
     # Set the major ticks and tick labels
     ax.set_xticks([-0.5, 0, 0.5, 1.0])
@@ -866,10 +912,21 @@ def deltaEdeltaE_plot(filename, surface, pure_metal_info, reward_type, show_plot
     # Set the grid lines
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
     
-    ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
-    ax.set_xlabel("$\Delta G_{^*H}$ [eV]")
-    ax.set_ylabel("$\Delta G_{^*COOH}$ [eV]")
+    #ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
+    ax.set_title(title_text)
+    ax.set_xlabel("$\Delta E_{^*H}$ [eV]")
+    ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
     
+    # Make lines at the correction constants
+    ax.axhline(y = -corrections["COOH"], xmin = xmin, xmax = xmax, c = "black")
+    ax.axvline(x = -corrections["H"], ymin = ymin, ymax = ymax, c = "black")
+
+    # And text for those correction lines
+    ax.text(x = -0.23, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
+    ax.text(x =  1.0, y = -0.47, s = "$\Delta E_{FAOR}$")
+
+    #### REWARD TYPES ####
+
     if reward_type == "right_corner":
         # Create a rectangle patch
         rect = patches.Rectangle((0, 0), 1.1, -0.6, linewidth=1, edgecolor='none', facecolor='green', alpha = 0.1)
@@ -938,11 +995,11 @@ def deltaEdeltaE_plot(filename, surface, pure_metal_info, reward_type, show_plot
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
         ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.2f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
     
-    if True:
-        for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
-            ax.scatter(pure_metal_info["DeltaG_H"][i], pure_metal_info["DeltaG_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
-        
-    ax.legend(loc="upper right")
+    for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
+        ax.scatter(pure_metal_info["DeltaE_H"][i], pure_metal_info["DeltaE_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
+        ax.text(pure_metal_info["DeltaE_H"][i]+0.03, pure_metal_info["DeltaE_COOH"][i], s = metal)
+
+    #ax.legend(loc="upper right")
     
     plt.savefig("../figures/DFT_calc_energies/"+filename+".png", dpi = 600, bbox_inches = "tight")
     if show_plot == True:
@@ -971,8 +1028,8 @@ def simulate_loss_right_corner(surface_stochiometry):
             y_hollow = (y_top + y_diff) % dim_y
             
             # What are the energies?
-            on_top_E = surface["COOH_G"][x_top][y_top]
-            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            on_top_E = surface["COOH_E"][x_top][y_top]
+            hollow_E = surface["H_E"][x_hollow][y_hollow]
             
             # Find GOOD sites:
             if (on_top_E < 0) and (hollow_E > 0):
@@ -998,8 +1055,8 @@ def simulate_loss_left_corner(surface_stochiometry):
             y_hollow = (y_top + y_diff) % dim_y
             
             # What are the energies?
-            on_top_E = surface["COOH_G"][x_top][y_top]
-            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            on_top_E = surface["COOH_E"][x_top][y_top]
+            hollow_E = surface["H_E"][x_hollow][y_hollow]
             
             # Find BAD sites:
             if (on_top_E < 0) and (hollow_E < 0): # Low COOH and low H
@@ -1025,8 +1082,8 @@ def simulate_loss_both_corners(surface_stochiometry):
             y_hollow = (y_top + y_diff) % dim_y
             
             # What are the energies?
-            on_top_E = surface["COOH_G"][x_top][y_top]
-            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            on_top_E = surface["COOH_E"][x_top][y_top]
+            hollow_E = surface["H_E"][x_hollow][y_hollow]
             
             # Find BAD sites:
             if (on_top_E < 0) and (hollow_E < 0): # Low COOH and low H
@@ -1058,8 +1115,8 @@ def simulate_loss_diagonal(surface_stochiometry):
             y_hollow = (y_top + y_diff) % dim_y
             
             # What are the energies?
-            on_top_E = surface["COOH_G"][x_top][y_top]
-            hollow_E = surface["H_G"][x_hollow][y_hollow]
+            on_top_E = surface["COOH_E"][x_top][y_top]
+            hollow_E = surface["H_E"][x_hollow][y_hollow]
             
             # Find GOOD sites:
             if on_top_E < hollow_E: # The on-top binding energy is lower than hollow binding energy. Smaller means binds better
@@ -1071,13 +1128,13 @@ def simulate_loss_diagonal(surface_stochiometry):
 #### FUNCTIONS FOR PREDITING ENERGIES ####
 
 def calc_given_energies(surface):
-    surface["COOH_given_H_down"]     = surface["mixed_down"]     - np.roll(surface["H_G"], (-1,  0), axis=(0, 1))
-    surface["COOH_given_H_up_right"] = surface["mixed_up_right"] - np.roll(surface["H_G"], ( 0,  0), axis=(0, 1))
-    surface["COOH_given_H_up_left"]  = surface["mixed_up_left"]  - np.roll(surface["H_G"], ( 0, -1), axis=(0, 1))
+    surface["COOH_given_H_down"]     = surface["mixed_down"]     - np.roll(surface["H_E"], (-1,  0), axis=(0, 1))
+    surface["COOH_given_H_up_right"] = surface["mixed_up_right"] - np.roll(surface["H_E"], ( 0,  0), axis=(0, 1))
+    surface["COOH_given_H_up_left"]  = surface["mixed_up_left"]  - np.roll(surface["H_E"], ( 0, -1), axis=(0, 1))
 
-    surface["H_given_COOH_down"]     = surface["mixed_down"]     - np.roll(surface["COOH_G"], (+1,  0), axis=(0, 1))
-    surface["H_given_COOH_up_right"] = surface["mixed_up_right"] - np.roll(surface["COOH_G"], ( 0,  0), axis=(0, 1))
-    surface["H_given_COOH_up_left"]  = surface["mixed_up_left"]  - np.roll(surface["COOH_G"], ( 0, +1), axis=(0, 1))
+    surface["H_given_COOH_down"]     = surface["mixed_down"]     - np.roll(surface["COOH_E"], (+1,  0), axis=(0, 1))
+    surface["H_given_COOH_up_right"] = surface["mixed_up_right"] - np.roll(surface["COOH_E"], ( 0,  0), axis=(0, 1))
+    surface["H_given_COOH_up_left"]  = surface["mixed_up_left"]  - np.roll(surface["COOH_E"], ( 0, +1), axis=(0, 1))
 
     return surface
 
@@ -1123,21 +1180,21 @@ def predict_mixed_energies(surface, dim_x, dim_y, models):
     COOH_up_left_features_DM  = pandas_to_DMatrix(COOH_up_left_features_df)
     
     # Predict energies in one long straight line
-    
-    COOH_down_G = models["mixed"].predict(COOH_down_features_DM)
-    COOH_up_right_G = models["mixed"].predict(COOH_up_right_features_DM)
-    COOH_up_left_G = models["mixed"].predict(COOH_up_left_features_DM)
+    # HERHERHER LAV OM TIL E
+    COOH_down_E = models["mixed"].predict(COOH_down_features_DM)
+    COOH_up_right_E = models["mixed"].predict(COOH_up_right_features_DM)
+    COOH_up_left_E = models["mixed"].predict(COOH_up_left_features_DM)
 
     # Make them into a nice matrix shape - in a minute
-    COOH_down_G = np.reshape(COOH_down_G, (dim_x, dim_y))
-    COOH_up_right_G = np.reshape(COOH_up_right_G, (dim_x, dim_y))
-    COOH_up_left_G = np.reshape(COOH_up_left_G, (dim_x, dim_y))
+    COOH_down_E = np.reshape(COOH_down_E, (dim_x, dim_y))
+    COOH_up_right_E = np.reshape(COOH_up_right_E, (dim_x, dim_y))
+    COOH_up_left_E = np.reshape(COOH_up_left_E, (dim_x, dim_y))
     
     # Attach the energies to the matrices in the surface dictionary
 
-    surface["mixed_down"]     = COOH_down_G
-    surface["mixed_up_right"] = COOH_up_right_G
-    surface["mixed_up_left"]  = COOH_up_left_G
+    surface["mixed_down"]     = COOH_down_E
+    surface["mixed_up_right"] = COOH_up_right_E
+    surface["mixed_up_left"]  = COOH_up_left_E
 
     surface = calc_given_energies(surface)
     return surface
@@ -1152,8 +1209,8 @@ def initialize_surface(dim_x, dim_y, metals, split): #Is still random - could be
     surf_ads_hol = np.reshape(["empty"]*dim_x*dim_y, (dim_x, dim_y))
 
     # Binding energies
-    surf_COOH_G = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
-    surf_H_G    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
+    surf_COOH_E = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# On-top sites
+    surf_H_E    = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))# Hollow sites
 
     # Mixed-site energies
     surf_COOH_down     = np.reshape([np.nan]*dim_x*dim_y, (dim_x, dim_y))
@@ -1164,7 +1221,7 @@ def initialize_surface(dim_x, dim_y, metals, split): #Is still random - could be
     
     surf = {"atoms": surf_atoms, "stochiometry": stochiometry,\
             "ads_top": surf_ads_top, "ads_hol": surf_ads_hol, \
-            "COOH_G": surf_COOH_G, "H_G": surf_H_G, "mixed_down": surf_COOH_down, "mixed_up_right": surf_COOH_up_right, "mixed_up_left": surf_COOH_up_left}
+            "COOH_E": surf_COOH_E, "H_E": surf_H_E, "mixed_down": surf_COOH_down, "mixed_up_right": surf_COOH_up_right, "mixed_up_left": surf_COOH_up_left}
     return surf
 
 def create_surface(dim_x, dim_y, metals, split):
@@ -1173,11 +1230,11 @@ def create_surface(dim_x, dim_y, metals, split):
     if np.sum(split) != 1.0:
         # This split is not weighted properly, I'll fix it
         split = split / np.sum(split)
-    if split == "Even":
-        proba = [1.0 / len(metals) for n in range(len(metals))] 
-        surface = np.random.choice(metals, num_atoms, p=proba)
-    else:
-        surface = np.random.choice(metals, num_atoms, p=split)
+    #if split == "Even": #Had to remove, because of some stupid futurewarning
+    #    proba = [1.0 / len(metals) for n in range(len(metals))] 
+    #    surface = np.random.choice(metals, num_atoms, p=proba)
+    
+    surface = np.random.choice(metals, num_atoms, p=split)
     surface = np.reshape(surface, (dim_x, dim_y, dim_z))
     return surface
 
@@ -1186,10 +1243,10 @@ def precompute_binding_energies_TQDM(surface, dim_x, dim_y, models, predict_G_fu
     for x, y in tqdm([(x, y) for x in range(dim_x) for y in range(dim_y)], desc = r"Predicting all ΔG", leave = False): # I could randomise this, so I go through all sites in a random order
         
         ads = "H"
-        surface["H_G"][x][y] = predict_G_function(surface["atoms"], x, y, ads, models) ## A new function that wraps/uses the XGBoost model
+        surface["H_E"][x][y] = predict_G_function(surface["atoms"], x, y, ads, models) ## A new function that wraps/uses the XGBoost model
         
         ads = "COOH"
-        surface["COOH_G"][x][y] = predict_G_function(surface["atoms"], x, y, ads, models) ## A new function that wraps/uses the XGBoost model
+        surface["COOH_E"][x][y] = predict_G_function(surface["atoms"], x, y, ads, models) ## A new function that wraps/uses the XGBoost model
 
     return surface
 
@@ -1232,29 +1289,29 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     on_top_features_DM = pandas_to_DMatrix(on_top_features_df)
 
     # Predict energies in one long straight line
-    H_G    = models["H"].predict(hollow_features_DM) # HERE THE MODELS ARE CHOSEN - NEW ONES ARE CALLED THE SAME AS USUAL
-    O_G    = models["O"].predict(hollow_features_DM)
-    COOH_G = models["COOH"].predict(on_top_features_DM) 
-    OH_G   = models["OH"].predict(on_top_features_DM)
+    H_E    = models["H"].predict(hollow_features_DM) # HERE THE MODELS ARE CHOSEN
+    O_E    = models["O"].predict(hollow_features_DM)
+    COOH_E = models["COOH"].predict(on_top_features_DM)
+    OH_E   = models["OH"].predict(on_top_features_DM)
     
     # Make them into a nice matrix shape - in a minute
-    H_G    = np.reshape(H_G   , (dim_x, dim_y))
-    O_G    = np.reshape(O_G   , (dim_x, dim_y))
-    COOH_G = np.reshape(COOH_G, (dim_x, dim_y))
-    OH_G   = np.reshape(OH_G   , (dim_x, dim_y))
+    H_E    = np.reshape(H_E   , (dim_x, dim_y))
+    O_E    = np.reshape(O_E   , (dim_x, dim_y))
+    COOH_E = np.reshape(COOH_E, (dim_x, dim_y))
+    OH_E   = np.reshape(OH_E   , (dim_x, dim_y))
 
     # Attach the energies to the matrices in the surface dictionary
-    surface["H_G"]    = H_G
-    surface["O_G"]    = H_G
-    surface["COOH_G"] = COOH_G
-    surface["OH_G"]   = OH_G
+    surface["H_E"]    = H_E
+    surface["O_E"]    = H_E
+    surface["COOH_E"] = COOH_E
+    surface["OH_E"]   = OH_E
 
     # Calculate and attach the border voltages
     
-    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_G"]   )
-    surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_G"]   )
-    surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_G"])
-    surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_G"]  )
+    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek 
+    surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_E"]   )
+    surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_E"])
+    surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_E"]  )
 
     # Predict the energies on the mixed sites
     surface = predict_mixed_energies(surface, dim_x, dim_y, models)
