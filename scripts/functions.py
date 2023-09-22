@@ -805,7 +805,7 @@ def plot_pure_metals(SE_slab_metals, DeltaG_H, DeltaG_COOH, metal_colors):
     ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
     ax.set_yticks([-0.5, 0, 0.5, 1.0])
     ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
-    
+
     # Set the grid lines
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
 
@@ -916,7 +916,7 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     ax.set_title(title_text)
     ax.set_xlabel("$\Delta E_{^*H}$ [eV]")
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
-    
+
     # Make lines at the correction constants
     ax.axhline(y = -corrections["COOH"], xmin = xmin, xmax = xmax, c = "black")
     ax.axvline(x = -corrections["H"], ymin = ymin, ymax = ymax, c = "black")
