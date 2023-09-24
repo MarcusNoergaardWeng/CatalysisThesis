@@ -1000,7 +1000,7 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
         ax.text(pure_metal_info["DeltaE_H"][i]+0.03, pure_metal_info["DeltaE_COOH"][i], s = metal)
 
     ax.legend(loc="upper right")
-    
+
     plt.savefig("../figures/"+filename+".png", dpi = 600, bbox_inches = "tight")
     if show_plot == True:
         plt.show()
