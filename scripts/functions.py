@@ -541,7 +541,7 @@ def initialize_swim_surface(A, B, dim_x, dim_y): # Tested, works
     # Make the split from the metals used
     # A and B should be lists of the metals present in the swim rings and the insides
     # A is inside the swim rings and B is the swim rings
-    # Soo this function doesn't ensure swim rings, it just makes a random mixture
+    # Soo this function doesn't ensure swim rings, it just makes a random mixture - Is what I thought, but the error was in the ase db software
     split = AB_to_split(A, B)
 
     # Make the surface (empty surface)
@@ -892,7 +892,7 @@ def sort_energies(surface, reward_type): # Just make it return everything all th
 
 # Make this into a function! And make it save a nice plot. Perhaps ask for a name directly in the function-call
 def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_type, show_plot):
-
+    
     # First, calculate the statistics of interest
     E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
 
