@@ -20,7 +20,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 200, 200
+dim_x, dim_y = 100, 100
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
@@ -63,6 +63,10 @@ molecules_dict = {'CO': -12.848598765234707,\
  'C2H6O': -43.67355392866396,\
  'C2H2O2': -32.92328015484662,\
  'C2H2O4': -44.117581976029946}
+
+# Define Boltzmann's constant
+kB = 1.380649e-4 / 1.602176634  # eV K-1 (exact)
+kBT = kB*300 # eV
 
 # Folder paths
 log_folder = "../Coverage_logs/"
@@ -625,7 +629,9 @@ def load_corrections():
         "COOH": calc_correction_constant_COOH(AF), \
         "H": calc_correction_constant_H(AF), \
         "OH": calc_correction_constant_OH(AF), \
-        "O": calc_correction_constant_O(AF)}
+        "O": calc_correction_constant_O(AF), \
+        "Bagger_H": 0.20, \
+        "Bagger_COOH": -0.11414}
     return corrections
 
 corrections = load_corrections()
@@ -1306,9 +1312,12 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     surface["COOH_E"] = COOH_E
     surface["OH_E"]   = OH_E
 
+    # Add the thermal corrections to make Gibbs free energies
+    surface["H_G"]    = surface["H_E"]    + corrections["Bagger_H"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Bagger_COOH"]
+
     # Calculate and attach the border voltages
-    
-    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek 
+    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
     surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_E"]   )
     surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_E"])
     surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_E"]  )
@@ -1318,6 +1327,66 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
 
     # Calculate the "*COOH given *H" and "*H given *COOH" energies
     surface = calc_given_energies(surface)
+
+    return surface
+
+def precompute_binding_energies_SPEED2(surface, dim_x, dim_y, models): #TJEK ADD OH, H, mixed-site sådan at det kan bruges til coverage simulations
+    hollow_features = [] # These features are the same for all hollow site adsorbates, hence these are made just once
+    on_top_features = []
+
+    # Make features for each site:
+    for x, y in [(x, y) for x in range(dim_x) for y in range(dim_y)]:#, desc = r"Making all feature vectors", leave = True): # I could randomise this, so I go through all sites in a random order
+        # Append the features for the hollow site adsorbates: H and O
+        hollow_features.append([hollow_site_vector(surface["atoms"], x, y)])
+
+        # Append the features for the on-top site adsorbates: OH and COOH
+        on_top_features.append([on_top_site_vector(surface["atoms"], x, y)])
+
+    # Remove the uneccesary singleton dimension
+    hollow_features = np.squeeze(hollow_features)
+    on_top_features = np.squeeze(on_top_features)
+
+    # Make the features into a big dataframe
+    hollow_features_df = pd.DataFrame(hollow_features, columns = [f"feature{n}" for n in range(55)])
+    on_top_features_df = pd.DataFrame(on_top_features, columns = [f"feature{n}" for n in range(20)])
+
+    # Turn them into DMatrix
+    hollow_features_DM = pandas_to_DMatrix(hollow_features_df)
+    on_top_features_DM = pandas_to_DMatrix(on_top_features_df)
+
+    # Predict energies in one long straight line
+    H_E    = models["H"].predict(hollow_features_DM) # HERE THE MODELS ARE CHOSEN
+    #O_E    = models["O"].predict(hollow_features_DM)
+    COOH_E = models["COOH"].predict(on_top_features_DM)
+    #OH_E   = models["OH"].predict(on_top_features_DM)
+    
+    # Make them into a nice matrix shape - in a minute
+    H_E    = np.reshape(H_E   , (dim_x, dim_y))
+    #O_E    = np.reshape(O_E   , (dim_x, dim_y))
+    COOH_E = np.reshape(COOH_E, (dim_x, dim_y))
+    #OH_E   = np.reshape(OH_E   , (dim_x, dim_y))
+
+    # Attach the energies to the matrices in the surface dictionary
+    surface["H_E"]    = H_E
+    #surface["O_E"]    = H_E
+    surface["COOH_E"] = COOH_E
+    #surface["OH_E"]   = OH_E
+
+    # Add the thermal corrections to make Gibbs free energies
+    surface["H_G"]    = surface["H_E"]    + corrections["Bagger_H"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Bagger_COOH"]
+
+    # Calculate and attach the border voltages
+    #surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
+    #surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_E"]   )
+    #surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_E"])
+    #surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_E"]  )
+
+    # Predict the energies on the mixed sites
+    #surface = predict_mixed_energies(surface, dim_x, dim_y, models)
+
+    # Calculate the "*COOH given *H" and "*H given *COOH" energies
+    #surface = calc_given_energies(surface)
 
     return surface
     
