@@ -1978,3 +1978,311 @@ def surface_composition(metals, surface):
         if composition[metal] > 0:
             composition_string += str(metal) + f"$_{{{composition[metal]:.2f}}}$"
     return composition, composition_string
+
+#### Estimating Activities ####
+
+def per_site_activity_special(COOH_binding_energies, H_binding_energies, eU):
+    """This activity estimation function returns the 
+    activity per surface atom.
+    The activity is estimated based on the COOH binding
+    energies (DeltaG), but the COOH energies from sites, 
+    where H binds to a neighbour hollow site are not included
+    Hence, they will contribute with 0 activity"""
+
+    allowed_energies = [] #All the COOH binding energies on sites, where H is not a neighbouring adsorbate
+    disqualified_energies = 0
+
+    for idx_x in range(dim_x):
+        for idx_y in range(dim_y):
+            # Check if any of the neighbouring hollow sites could house an H
+            security_clearence = True
+            for x_diff, y_diff in [(0, 0), (-1, 0), (0, -1)]:
+                neighbour_H_G = H_binding_energies[idx_x+x_diff, idx_y+y_diff]
+                if neighbour_H_G < 0:
+                    disqualified_energies += 1
+                    security_clearence = False
+                    continue
+            
+            if security_clearence == True:
+                # If we get here it means no H + COOH disprop reac
+                allowed_energies.append(COOH_binding_energies[idx_x][idx_y])
+    
+    j_avg = per_site_activity(allowed_energies, eU, jD=1.)
+    return j_avg
+
+def per_site_activity(energies, eU, jD=1.):
+    """This activity estimation function returns the 
+    activity per surface atom.
+    The activity is estimated based on the COOH binding
+    energies (DeltaG), but the COOH energies from sites, 
+    where H binds to a neighbour hollow site
+    The highest possible activity is 0.5 because of jD=1.
+    Calculated using Angewandte Chemie equations 2-4 
+    (doi: 10.1002/anie.202014374). Based on a function 
+    Jack wrote in https://seafile.erda.dk/seafile/d/8586692f13/files/?p=%2Fscripts%2F__init__.py"""
+
+    E_opt = -0.17
+    energies = np.array(energies)
+    energies = energies.flatten()
+    n_surface_atoms = dim_x*dim_y
+
+    # Making a list of activities
+    jki = np.exp((-np.abs(energies - E_opt) -0.17 - eU) / kBT) # The term in the exponent will be 0 in the most optimal case #TJEK is the minus in the right place?
+    
+    j_avg = np.sum(1. / (1. / jki + 1./jD)) / n_surface_atoms
+    return j_avg
+
+## I need a function, where I just input a stoichiometry and a voltage, and 
+# Create surface
+# Loop through potentials
+# surface = regn deltaG'er ud på ny og inkludér potentialet
+# Kør aktivitetsudregnerne
+
+def activity_of_surface(stoichiometry, V_min, V_max, SPEED):
+    # Create surface
+    HEA_surface = initialize_surface(dim_x, dim_y, metals, stoichiometry)
+    HEA_surface = precompute_binding_energies_SPEED2(HEA_surface, dim_x, dim_y, models)
+
+    # Loop through potentials
+    potential_range = np.linspace(V_min, V_max, 50) #HERHERHERHERHER
+    j_avg_list         = []
+    j_avg_special_list = []
+    for eU in potential_range:
+
+        # Calculate binding energies based on the potentials also
+        COOH_binding_energies = HEA_surface["COOH_G"] - eU
+        H_binding_energies    = HEA_surface["H_G"]    + eU
+
+        # Use per_site_activity
+        if SPEED == False: 
+            j_avg_list.append(per_site_activity(COOH_binding_energies, eU, jD=1.))
+
+        # Use per_site_activity_special
+        j_avg_special_list.append(per_site_activity_special(COOH_binding_energies, H_binding_energies, eU))
+    
+    # Find the highest activity
+    # Find the index of the maximum value in j_avg_special_list
+    max_index = j_avg_special_list.index(max(j_avg_special_list))
+
+    # Get the corresponding potential from potential_range
+    max_potential = potential_range[max_index]
+    if SPEED == False:
+        activity_dict = {"potential_range": potential_range, "j_avg_list": j_avg_list, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential, "stoichiometry": stoichiometry}
+    else:
+        activity_dict = {"j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential}
+        #activity_dict = {"potential_range": potential_range, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential}
+    return activity_dict
+
+def stoch_to_string(stoichiometry):
+    string = ""
+    for idx, metal in enumerate(metals):
+        string += f"{metal}$_{{{stoichiometry[idx]:.2f}}}$"
+    return string
+
+def activity_plot(activity_dict):
+    fig, ax = plt.subplots(figsize = (8, 5))
+    ax.plot(activity_dict["potential_range"], activity_dict["j_avg_list"],         label = "Activity estimate based on all on-top sites")
+    ax.plot(activity_dict["potential_range"], activity_dict["j_avg_special_list"], label = "Activity estimate based on select \nnon-CO-poisoned on-top sites")
+    
+    # Set axis labels
+    ax.set_xlabel('Potential [V]')
+    ax.set_ylabel('Estimated activity per-site')
+
+    # Set y-axis to a logarithmic scale
+    #ax.set_yscale('log')
+    max_j = activity_dict["special_max_j"]
+    ax.text(x=0.1, y=activity_dict["special_max_j"], s=
+            "Surface stoichiometry \n"+
+            stoch_to_string(activity_dict["stoichiometry"]) + "\n" +
+            f"Maximum activity: {max_j:.1e}")
+
+    ax.legend()
+    
+    fig.show()
+    return None
+
+#### Loading and plotting the estimated activities ####
+
+# Function to parse a string into a list of floats
+def parse_molar_fraction(s): # Helps loading the .csv files! Made with ChatGPT assistance
+    # Remove brackets and split by spaces
+    values = s.strip('[]').split()
+
+    # Convert each value to float
+    return [float(value) for value in values]
+
+def load_csv_activity_data(filename):
+    # Load CSV file into a pandas DataFrame
+    df = pd.read_csv(filename)
+
+    # Extract columns and convert them to lists
+    molar_fractions = df['Molar_Fraction'].tolist()
+    estimated_activities = df['Estimated_Activities'].tolist()
+    estimated_max_eUs = df['Estimated_Max_eUs'].tolist()
+
+    molar_fractions = np.array([parse_molar_fraction(molar_frac) for molar_frac in molar_fractions])
+
+    return molar_fractions, estimated_activities, estimated_max_eUs
+
+def remove_columns(matrix, columns_to_keep):
+    return [list(row[i] for i in columns_to_keep) for row in matrix]
+
+def make_empty_plot():
+    fig, ax = plt.subplots(figsize = (6, 6))
+
+    # Remove ticks, axis labels, and everything
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    return fig, ax
+
+## All this code was written by Jack . Ref: https://seafile.erda.dk/seafile/d/8586692f13/files/?p=%2Fscripts%2F__init__.py
+
+def get_composition(f, metals, return_latex=False, saferound=True):
+	
+	# Make into numpy and convert to atomic percent
+	f = np.asarray(f)*100
+	
+	if saferound:
+		# Round while maintaining the sum, the iteround module may need
+		# to be installed manually from pypi: "pip3 install iteround"
+		import iteround
+		f = iteround.saferound(f, 0)
+	
+	if return_latex:
+		# Return string in latex format with numbers as subscripts
+		return ''.join(['$\\rm {0}_{{{1}}}$'.format(m,f0) for m,f0 in\
+			zip(metals, map('{:.0f}'.format, f)) if float(f0) > 0.])
+	else:
+		# Return composition as plain text
+		return ''.join([''.join([m, f0]) for m,f0 in\
+			zip(metals, map('{:.0f}'.format, f)) if float(f0) > 0.])
+
+n_metals = 3
+def get_simplex_vertices(n_elems=n_metals):
+
+	# Initiate array of vertice coordinates
+	vertices = np.zeros((n_elems, n_elems-1))
+	
+	for idx in range(1, n_elems):
+		
+		# Get coordinate of the existing dimensions as the 
+		# mean of the existing vertices
+		vertices[idx] = np.mean(vertices[:idx], axis=0)
+		
+		# Get the coordinate of the new dimension by ensuring it has a unit 
+		# distance to the first vertex at the origin 
+		vertices[idx][idx-1] = (1 - np.sum(vertices[idx][:-1]**2))**0.5
+		
+	return vertices
+
+def molar_fractions_to_cartesians(fs):
+	
+	# Make into numpy
+	fs = np.asarray(fs)
+
+	if fs.ndim == 1:
+		fs = np.reshape(fs, (1, -1))
+
+	# Get vertices of the multidimensional simplex
+	n_elems = fs.shape[1]
+	vertices = get_simplex_vertices(n_elems)	
+	vertices_matrix = vertices.T
+	
+	# Get cartisian coordinates corresponding to the molar fractions
+	return np.dot(vertices_matrix, fs.T)
+
+def make_triangle_ticks(ax, start, stop, tick, n, offset=(0., 0.),
+						fontsize=18, ha='center', tick_labels=True):
+	r = np.linspace(0, 1, n+1)
+	x = start[0] * (1 - r) + stop[0] * r
+	x = np.vstack((x, x + tick[0]))
+	y = start[1] * (1 - r) + stop[1] * r
+	y = np.vstack((y, y + tick[1]))
+	ax.plot(x, y, 'k', lw=1., zorder=0)
+	
+	if tick_labels:
+	
+		# Add tick labels
+		for xx, yy, rr in zip(x[0], y[0], r):
+			ax.text(xx+offset[0], yy+offset[1], f'{rr*100.:.0f}',
+					fontsize=fontsize, ha=ha)
+
+def make_ternary_contour_plot(fs, zs, ax, elems, cmap='viridis', levels=30,
+							  color_norm=None, filled=True, axis_labels=True,
+							  n_ticks=5, tick_labels=True, corner_labels=True):
+
+	# Get cartesian coordinates corresponding to the molar fractions
+	xs, ys = molar_fractions_to_cartesians(fs)
+	
+	# Make contour plot
+	if filled:
+		ax.tricontourf(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+	else:
+		ax.tricontour(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+    
+	# Specify vertices as molar fractions
+	fs_vertices = [[1., 0., 0.],
+				   [0., 1., 0.],
+				   [0., 0., 1.]]
+	
+	# Get cartesian coordinates of vertices
+	xs, ys = molar_fractions_to_cartesians(fs_vertices)
+	
+	# Make ticks and tick labels on the triangle axes
+	left, right, top = np.concatenate((xs.reshape(-1,1), ys.reshape(-1,1)), axis=1)
+	
+	tick_size = 0.025
+	bottom_ticks = 0.8264*tick_size * (right - top)
+	right_ticks = 0.8264*tick_size * (top - left)
+	left_ticks = 0.8264*tick_size * (left - right)
+    
+	make_triangle_ticks(ax, right, left, bottom_ticks, n_ticks, offset=(0.03, -0.08), ha='center', tick_labels=tick_labels)
+	make_triangle_ticks(ax, left, top, left_ticks, n_ticks, offset=(-0.03, -0.015), ha='right', tick_labels=tick_labels)
+	make_triangle_ticks(ax, top, right, right_ticks, n_ticks, offset=(0.015, 0.02), ha='left', tick_labels=tick_labels)
+
+	if axis_labels:	
+		# Show axis labels (i.e. atomic percentages)
+		ax.text(0.5, -0.12, f'{elems[0]} content (%)', rotation=0., fontsize=20, ha='center', va='center')
+		ax.text(0.88, 0.5, f'{elems[1]} content (%)', rotation=-60., fontsize=20, ha='center', va='center')
+		ax.text(0.12, 0.5, f'{elems[2]} content (%)', rotation=60., fontsize=20, ha='center', va='center')
+
+	if corner_labels:
+		
+		# Define padding to put the text neatly
+		pad = [[-0.13, -0.09],
+			   [ 0.07, -0.09],
+			   [-0.04,  0.09]]
+		
+		# Show the chemical symbol as text at each vertex
+		for idx, (x, y, (dx, dy)) in enumerate(zip(xs, ys, pad)):
+			ax.text(x+dx, y+dy, s=elems[idx], fontsize=24)
+    
+## Above code was written by Jack
+
+def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs): # Written with ChatGPT assistance
+    # Find the index of the maximum estimated activity
+    max_activity_index = estimated_activities.index(max(estimated_activities))
+
+    # Get the corresponding molar fraction and estimated_max_eUs
+    max_activity_molar_fraction = molar_fractions[max_activity_index]
+    max_activity_estimated_max_eUs = estimated_max_eUs[max_activity_index]
+
+    # Print the results
+    max_activity = max(estimated_activities)
+    max_molar_fraction = max_activity_molar_fraction
+    max_eU = max_activity_estimated_max_eUs
+
+    print(f"The highest activity is: {max_activity:.2e}")
+    print(f"The composition is: {max_molar_fraction}")
+    print(f"The highest activity happens at the eU: {max_eU:.2f}")
+
+    # Return the result as a tuple
+    return max_activity, max_molar_fraction, max_eU
