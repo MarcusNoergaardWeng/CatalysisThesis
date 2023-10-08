@@ -12,7 +12,7 @@ from xgboost import XGBRegressor
 import time
 import random
 import csv
-#from skopt import gp_minimize
+from skopt import gp_minimize
 from ase.db import connect
 
 sys.path.append('../scripts')
@@ -524,11 +524,11 @@ def calc_correction_constant_OH(AF):
 
 def AB_to_split(A, B): #Tested, works
     split = [0, 0, 0, 0, 0]
-
+    number = 2 #Set this to 2 for 1/3 and 6 for 1/7 swr surface
     if "Ag" in B:
-        split[0] += 6/len(B)
+        split[0] += number/len(B)
     if "Au" in B:
-        split[1] += 6/len(B)
+        split[1] += number/len(B)
     if "Pd" in A:
         split[3] += 1/len(A)
     if "Pt" in A:
@@ -729,16 +729,16 @@ def Bayesian_optimization_plot(results, losses, experiment_name):
     # Plot the losses as a function of iteration
     plt.subplot(2, 1, 2)
     plt.plot(-losses)
-    plt.title('Number of good sites at each iteration')
+    #plt.title('Number of good sites at each iteration')
     plt.xlabel('Iteration')
-    plt.ylabel('Good sites')
+    plt.ylabel('Estimated activity, excluding CO-poisoned sites')
 
     # Adjust the layout of the subplots
     plt.tight_layout()
 
     # Save figure
     #experiment_name = "140by140_100its_diagonal"
-    plt.savefig("../figures/DFT_calc_energies/"+experiment_name+"_progression.png", dpi = 300, bbox_inches = "tight")
+    #plt.savefig("../figures/DFT_calc_energies/"+experiment_name+"_progression.png", dpi = 300, bbox_inches = "tight")
 
     # Show the plot
     plt.show()
@@ -1389,7 +1389,7 @@ def precompute_binding_energies_SPEED2(surface, dim_x, dim_y, models): #TJEK ADD
     #surface = calc_given_energies(surface)
 
     return surface
-    
+
 def on_top_site_vector(surface, site_x, site_y): # I should have done modulo to dim_x and dim_y
     dim_x, dim_y = np.shape(surface)[0], np.shape(surface)[1]
     site1 = [surface[site_x, site_y, 0]]# Make a one-hot encoded vector of the very site here! Add at the beginning 
@@ -2038,13 +2038,13 @@ def per_site_activity(energies, eU, jD=1.):
 # surface = regn deltaG'er ud på ny og inkludér potentialet
 # Kør aktivitetsudregnerne
 
-def activity_of_surface(stoichiometry, V_min, V_max, SPEED):
+def activity_of_surface(stoichiometry, V_min=-0.15, V_max=0.2, SPEED = "Bayesian"):
     # Create surface
     HEA_surface = initialize_surface(dim_x, dim_y, metals, stoichiometry)
     HEA_surface = precompute_binding_energies_SPEED2(HEA_surface, dim_x, dim_y, models)
 
     # Loop through potentials
-    potential_range = np.linspace(V_min, V_max, 50) #HERHERHERHERHER
+    potential_range = np.linspace(V_min, V_max, 15) #HERHERHERHERHER
     j_avg_list         = []
     j_avg_special_list = []
     for eU in potential_range:
@@ -2068,10 +2068,39 @@ def activity_of_surface(stoichiometry, V_min, V_max, SPEED):
     max_potential = potential_range[max_index]
     if SPEED == False:
         activity_dict = {"potential_range": potential_range, "j_avg_list": j_avg_list, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential, "stoichiometry": stoichiometry}
-    else:
+        return activity_dict
+    if SPEED == True:
         activity_dict = {"j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential}
-        #activity_dict = {"potential_range": potential_range, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential}
+        return activity_dict
+    if SPEED == "Bayesian":
+        return -max(j_avg_special_list)
+    
+def activity_directly_from_surface(surface, n_points, V_min=-0.15, V_max=0.2):
+    # Loop through potentials
+    potential_range = np.linspace(V_min, V_max, n_points) #HERHERHERHERHER
+    j_avg_list         = []
+    j_avg_special_list = []
+    for eU in potential_range:
+        # Calculate binding energies based on the potentials also
+        COOH_binding_energies = surface["COOH_G"] - eU
+        H_binding_energies    = surface["H_G"]    + eU
+
+        # Use per_site_activity 
+        j_avg_list.append(per_site_activity(COOH_binding_energies, eU, jD=1.))
+
+        # Use per_site_activity_special
+        j_avg_special_list.append(per_site_activity_special(COOH_binding_energies, H_binding_energies, eU))
+    
+    # Find the highest activity
+    # Find the index of the maximum value in j_avg_special_list
+    max_index = j_avg_special_list.index(max(j_avg_special_list))
+
+    # Get the corresponding potential from potential_range
+    max_potential = potential_range[max_index]
+
+    activity_dict = {"potential_range": potential_range, "j_avg_list": j_avg_list, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential, "stoichiometry": surface["stochiometry"]}
     return activity_dict
+    
 
 def stoch_to_string(stoichiometry):
     string = ""
@@ -2286,3 +2315,4 @@ def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs):
 
     # Return the result as a tuple
     return max_activity, max_molar_fraction, max_eU
+
