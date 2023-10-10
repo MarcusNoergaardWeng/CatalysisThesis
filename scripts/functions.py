@@ -15,6 +15,9 @@ import csv
 from skopt import gp_minimize
 from ase.db import connect
 
+import scipy
+import itertools as it
+
 sys.path.append('../scripts')
 from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
@@ -529,6 +532,8 @@ def AB_to_split(A, B): #Tested, works
         split[0] += number/len(B)
     if "Au" in B:
         split[1] += number/len(B)
+    if "Cu" in B:
+        split[2] += number/len(B)
     if "Pd" in A:
         split[3] += 1/len(A)
     if "Pt" in A:
@@ -1981,6 +1986,8 @@ def surface_composition(metals, surface):
 
 #### Estimating Activities ####
 
+
+
 def per_site_activity_special(COOH_binding_energies, H_binding_energies, eU):
     """This activity estimation function returns the 
     activity per surface atom.
@@ -2044,7 +2051,7 @@ def activity_of_surface(stoichiometry, V_min=-0.15, V_max=0.2, SPEED = "Bayesian
     HEA_surface = precompute_binding_energies_SPEED2(HEA_surface, dim_x, dim_y, models)
 
     # Loop through potentials
-    potential_range = np.linspace(V_min, V_max, 15) #HERHERHERHERHER
+    potential_range = np.linspace(V_min, V_max, 30) #HERHERHERHERHER
     j_avg_list         = []
     j_avg_special_list = []
     for eU in potential_range:
@@ -2100,7 +2107,6 @@ def activity_directly_from_surface(surface, n_points, V_min=-0.15, V_max=0.2):
 
     activity_dict = {"potential_range": potential_range, "j_avg_list": j_avg_list, "j_avg_special_list": j_avg_special_list, "special_max_j": max(j_avg_special_list), "special_max_eU": max_potential, "stoichiometry": surface["stochiometry"]}
     return activity_dict
-    
 
 def stoch_to_string(stoichiometry):
     string = ""
@@ -2108,14 +2114,14 @@ def stoch_to_string(stoichiometry):
         string += f"{metal}$_{{{stoichiometry[idx]:.2f}}}$"
     return string
 
-def activity_plot(activity_dict):
+def activity_plot(activity_dict, filename):
     fig, ax = plt.subplots(figsize = (8, 5))
     ax.plot(activity_dict["potential_range"], activity_dict["j_avg_list"],         label = "Activity estimate based on all on-top sites")
     ax.plot(activity_dict["potential_range"], activity_dict["j_avg_special_list"], label = "Activity estimate based on select \nnon-CO-poisoned on-top sites")
     
     # Set axis labels
     ax.set_xlabel('Potential [V]')
-    ax.set_ylabel('Estimated activity per-site')
+    ax.set_ylabel('Estimated activity')
 
     # Set y-axis to a logarithmic scale
     #ax.set_yscale('log')
@@ -2125,8 +2131,8 @@ def activity_plot(activity_dict):
             stoch_to_string(activity_dict["stoichiometry"]) + "\n" +
             f"Maximum activity: {max_j:.1e}")
 
-    ax.legend()
-    
+    ax.legend(loc = "upper right")
+    plt.savefig("../Activity_Estimation/"+filename, dpi = 400, bbox_inches = "tight")
     fig.show()
     return None
 
@@ -2173,6 +2179,28 @@ def make_empty_plot():
     return fig, ax
 
 ## All this code was written by Jack . Ref: https://seafile.erda.dk/seafile/d/8586692f13/files/?p=%2Fscripts%2F__init__.py
+
+def count_elements(elements, n_elems):
+	count = np.zeros(n_elems, dtype=int)
+	for elem in elements:
+		count[elem] += 1
+	return count
+
+def get_molar_fractions(step_size, n_elems, total=1., return_number_of_molar_fractions=False):
+	'Get all molar fractions with the given step size'
+	
+	interval = int(total/step_size)
+	n_combs = scipy.special.comb(n_elems+interval-1, interval, exact=True)
+	
+	if return_number_of_molar_fractions:
+		return n_combs
+		
+	counts = np.zeros((n_combs, n_elems), dtype=int)
+
+	for i, comb in enumerate(it.combinations_with_replacement(range(n_elems), interval)):
+		counts[i] = count_elements(comb, n_elems)
+
+	return counts*step_size
 
 def get_composition(f, metals, return_latex=False, saferound=True):
 	
@@ -2244,7 +2272,7 @@ def make_triangle_ticks(ax, start, stop, tick, n, offset=(0., 0.),
 			ax.text(xx+offset[0], yy+offset[1], f'{rr*100.:.0f}',
 					fontsize=fontsize, ha=ha)
 
-def make_ternary_contour_plot(fs, zs, ax, elems, cmap='viridis', levels=30,
+def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', levels=30,
 							  color_norm=None, filled=True, axis_labels=True,
 							  n_ticks=5, tick_labels=True, corner_labels=True):
 
@@ -2292,8 +2320,12 @@ def make_ternary_contour_plot(fs, zs, ax, elems, cmap='viridis', levels=30,
 		
 		# Show the chemical symbol as text at each vertex
 		for idx, (x, y, (dx, dy)) in enumerate(zip(xs, ys, pad)):
-			ax.text(x+dx, y+dy, s=elems[idx], fontsize=24)
+			if len(elems[idx]) > 2:
+				ax.text(x+dx-0.25, y+dy, s=elems[idx], fontsize=24)
+			else:
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=24)
     
+	plt.savefig("../Activity_Estimation/"+filename, dpi = 400, bbox_inches = "tight")
 ## Above code was written by Jack
 
 def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs): # Written with ChatGPT assistance
@@ -2316,3 +2348,24 @@ def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs):
     # Return the result as a tuple
     return max_activity, max_molar_fraction, max_eU
 
+# Assuming you have three lists: molar_fractions_020, estimated_activities, estimated_max_eUs
+def save_activities_csv(filename, molar_fractions, estimated_activities, estimated_max_eUs):
+    # Specify the file name
+    csv_file_name = "../Activity_Estimation/" + filename
+    #filename = "molar_fractions_PtAgAu_activity.csv"
+
+    # Combine the lists into rows
+    data = zip(molar_fractions, estimated_activities, estimated_max_eUs)
+
+    # Write to CSV file
+    with open(csv_file_name, 'w', newline='') as csv_file:
+        csv_writer = csv.writer(csv_file)
+        
+        # Write header if needed
+        csv_writer.writerow(['Molar_Fraction', 'Estimated_Activities', 'Estimated_Max_eUs'])
+        
+        # Write data
+        csv_writer.writerows(data)
+
+    print(f'Data has been saved to {csv_file_name}')
+    return None
