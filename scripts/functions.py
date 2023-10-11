@@ -23,7 +23,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 100, 100
+dim_x, dim_y = 500, 500
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
