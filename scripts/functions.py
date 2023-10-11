@@ -23,7 +23,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 500, 500
+dim_x, dim_y = 200, 200
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
@@ -929,12 +929,12 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
 
     # Make lines at the correction constants
-    ax.axhline(y = -corrections["COOH"], xmin = xmin, xmax = xmax, c = "black")
-    ax.axvline(x = -corrections["H"], ymin = ymin, ymax = ymax, c = "black")
+    ax.axhline(y = -corrections["Bagger_COOH"], xmin = xmin, xmax = xmax, c = "black")
+    ax.axvline(x = -corrections["Bagger_H"], ymin = ymin, ymax = ymax, c = "black")
 
     # And text for those correction lines
-    ax.text(x = -0.23, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
-    ax.text(x =  1.0, y = -0.47, s = "$\Delta E_{FAOR}$")
+    ax.text(x = -0.20+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
+    ax.text(x =  1.0, y = +0.11+0.03, s = "$\Delta E_{FAOR}$")
 
     #### REWARD TYPES ####
 
@@ -2034,8 +2034,12 @@ def per_site_activity(energies, eU, jD=1.):
     n_surface_atoms = dim_x*dim_y
 
     # Making a list of activities
-    jki = np.exp((-np.abs(energies - E_opt) -0.17 - eU) / kBT) # The term in the exponent will be 0 in the most optimal case #TJEK is the minus in the right place?
-    
+
+    # I used this initially, but as Jack said, 
+    #jki = np.exp((-np.abs(energies - E_opt) -0.17 - eU) / kBT)
+
+    G_RLS = (np.abs(energies - E_opt) +0.17 - eU) / kBT
+    jki = np.exp(-G_RLS)
     j_avg = np.sum(1. / (1. / jki + 1./jD)) / n_surface_atoms
     return j_avg
 
