@@ -636,7 +636,9 @@ def load_corrections():
         "OH": calc_correction_constant_OH(AF), \
         "O": calc_correction_constant_O(AF), \
         "Bagger_H": 0.20, \
-        "Bagger_COOH": -0.11414}
+        "Bagger_COOH": -0.11414, \
+        "Jack_H": 0.20,\
+        "Jack_COOH": 0.29}
     return corrections
 
 corrections = load_corrections()
@@ -929,12 +931,12 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
 
     # Make lines at the correction constants
-    ax.axhline(y = -corrections["Bagger_COOH"], xmin = xmin, xmax = xmax, c = "black")
-    ax.axvline(x = -corrections["Bagger_H"], ymin = ymin, ymax = ymax, c = "black")
+    ax.axhline(y = -corrections["Jack_COOH"], xmin = xmin, xmax = xmax, c = "black")
+    ax.axvline(x = -corrections["Jack_H"], ymin = ymin, ymax = ymax, c = "black")
 
     # And text for those correction lines
-    ax.text(x = -0.20+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
-    ax.text(x =  1.0, y = +0.11+0.03, s = "$\Delta E_{FAOR}$")
+    ax.text(x = -corrections["Jack_H"]+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
+    ax.text(x =  1.0, y = -corrections["Jack_COOH"]+0.01, s = "$\Delta E_{FAOR}$")
 
     #### REWARD TYPES ####
 
@@ -1018,6 +1020,67 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     else:
         plt.close()
     return None
+
+def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_metal_info, reward_type, show_plot):
+    
+    # First, calculate the statistics of interest
+    E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
+
+    fig, ax = plt.subplots(figsize = (6, 6))
+
+    # Set the limits for both x and y axes
+    xmin, xmax, ymin, ymax = -0.6, 1.3, -0.6, 1.3
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    
+    # Set the major ticks and tick labels
+    ax.set_xticks([-0.5, 0, 0.5, 1.0])
+    ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
+    ax.set_yticks([-0.5, 0, 0.5, 1.0])
+    ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
+    
+    # Set the grid lines
+    ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
+    
+    #ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
+    ax.set_title(title_text)
+    ax.set_xlabel("$\Delta E_{^*H}$ [eV]")
+    ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
+
+    # Make lines at the correction constants
+    ax.axhline(y = -corrections["Jack_COOH"], xmin = xmin, xmax = xmax, c = "black")
+    ax.axvline(x = -corrections["Jack_H"], ymin = ymin, ymax = ymax, c = "black")
+
+    # And text for those correction lines
+    ax.text(x = -corrections["Jack_H"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
+    ax.text(x =  1.0, y = -corrections["Jack_COOH"]+potential+0.01, s = "$\Delta E_{FAOR}$")
+    
+    ### New dashed lines with potential
+    # Lines that move with the deltaG=0 when potential (eU) changes
+    ax.axhline(y = -corrections["Jack_COOH"]+potential, xmin = xmin, xmax = xmax, c = "black", linestyle = "dashed")
+    ax.axvline(x = -corrections["Jack_H"]-potential, ymin = ymin, ymax = ymax,    c = "black", linestyle = "dashed")
+
+    # Text showing the potential
+    ax.text(x =  0.5, y = -corrections["Jack_COOH"]+potential+0.01, s = f"$eU = {potential:.2f}  eV$") #\Delta E_{FAOR}$")
+
+
+    stochiometry = surface["stochiometry"]
+    for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
+        ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.1f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
+    
+    for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
+        ax.scatter(pure_metal_info["DeltaE_H"][i], pure_metal_info["DeltaE_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
+        ax.text(pure_metal_info["DeltaE_H"][i]+0.03, pure_metal_info["DeltaE_COOH"][i], s = metal)
+
+    ax.legend(loc="upper right")
+
+    plt.savefig("../figures/"+filename+".png", dpi = 600, bbox_inches = "tight")
+    if show_plot == True:
+        plt.show()
+    else:
+        plt.close()
+    return None
+
 
 #### FUNCTIONS FOR BAYESIAN OPTIMIZATION ####
 
@@ -1318,8 +1381,8 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     surface["OH_E"]   = OH_E
 
     # Add the thermal corrections to make Gibbs free energies
-    surface["H_G"]    = surface["H_E"]    + corrections["Bagger_H"]
-    surface["COOH_G"] = surface["COOH_E"] + corrections["Bagger_COOH"]
+    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH"]
 
     # Calculate and attach the border voltages
     surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
@@ -1378,8 +1441,8 @@ def precompute_binding_energies_SPEED2(surface, dim_x, dim_y, models): #TJEK ADD
     #surface["OH_E"]   = OH_E
 
     # Add the thermal corrections to make Gibbs free energies
-    surface["H_G"]    = surface["H_E"]    + corrections["Bagger_H"]
-    surface["COOH_G"] = surface["COOH_E"] + corrections["Bagger_COOH"]
+    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH"]
 
     # Calculate and attach the border voltages
     #surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
