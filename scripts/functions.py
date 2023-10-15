@@ -23,7 +23,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 200, 200
+dim_x, dim_y = 100, 100
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
@@ -2062,7 +2062,7 @@ def per_site_activity_special(COOH_binding_energies, H_binding_energies, eU):
 
     allowed_energies = [] #All the COOH binding energies on sites, where H is not a neighbouring adsorbate
     disqualified_energies = 0
-    
+
     for idx_x in range(dim_x):
         for idx_y in range(dim_y):
             # Check if any of the neighbouring hollow sites could house an H
@@ -2438,4 +2438,88 @@ def save_activities_csv(filename, molar_fractions, estimated_activities, estimat
     print(f'Data has been saved to {csv_file_name}')
     return None
 
+##### Counting activity estimation #####
+
+# In: Surface + potential
+# Out: Number of active and number of inactive and number of blocked sites
+def counting_activity(surface, potential):
+    H_G_values    = surface["H_G"] + potential
+    COOH_G_values = surface["COOH_G"] - potential
+
+    active = 0
+    inactive = sum(1 for value in COOH_G_values.flatten() if value > 0) #Counts number of binding COOH binding sites
+    blocked = 0
+
+    for idx_x in range(dim_x):
+        for idx_y in range(dim_y):
+            # Check if any of the neighbouring hollow sites could house an H
+            security_clearence = True # This being true means NO dangerous H neighbours
+            for x_diff, y_diff in [(0, 0), (-1, 0), (0, -1)]:
+                neighbour_H_G = H_G_values[idx_x+x_diff, idx_y+y_diff]
+                if neighbour_H_G < 0:
+                    security_clearence = False # This being false means there is at least one dangerous neighbour
+                    continue
+            
+            if COOH_G_values[idx_x][idx_y] > 0:
+                COOH_binds = False
+            if COOH_G_values[idx_x][idx_y] < 0:
+                COOH_binds = True
+
+            if security_clearence and COOH_binds:
+                # There is a safe on-top site and COOH binds - SIUUUUU
+                active += 1
+            if not security_clearence and COOH_binds: #COOH would bind if it could but it can't because of block
+                # The site is blocked
+                blocked += 1
+
+    return active, inactive, blocked
+
+def counting_activity_scan(surface, Vmin, Vmax, points):
+    """Takes a surface and a potential, and returns counts of:
+    Active_list: Sites where COOH binds and no neighbouring H
+    Inactive_list: Sites where COOH wouldn't bind no matter the blocking
+    Blocked_list: Sites where COOH would bind but blocked by H disprop
+    It doesn't count Inactive AND blocked. That group is in inactive"""
+
+    active_list = []
+    inactive_list = []
+    blocked_list = []
+    potential_range = np.linspace(Vmin, Vmax, points)
+    for potential in potential_range:
+        active, inactive, blocked = counting_activity(surface, potential)
+        active_list.append(active)
+        inactive_list.append(inactive)
+        blocked_list.append(blocked)
+    return np.array(potential_range), np.array(active_list), np.array(inactive_list), np.array(blocked_list)
+
+def counting_activity_plot(potential_range, active_list, inactive_list, blocked_list, split):
+    fig, ax = plt.subplots(figsize = (8, 5))
+    n_sites = 200*200
+    ax.plot(potential_range, active_list/n_sites,   c = "green", label = "Active on-top sites")
+    ax.plot(potential_range, inactive_list/n_sites, c = "grey", label = "Inactive on-top sites")
+    ax.plot(potential_range, blocked_list/n_sites,  c = "r", label = "Blocked on-top sites")
+
+    # Set the major ticks and tick labels
+    ax.set_xticks([-0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    ax.set_xticklabels([-0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    ax.set_yticks([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    ax.set_yticklabels([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+    # Put the stoichiometry in there
+    ax.text(x=0.10, y=0.95, s = stoch_to_string(split))
+
+    # Set axis labels
+    ax.set_xlabel('Potential [V]')
+    ax.set_ylabel('Number of sites as a fraction of all on-top sites')
+
+    # Set the grid lines
+    ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
+
+    ax.legend()
+
+    plt.savefig("../Counting_Activity/Counting_Sites_" + filename, dpi = 400, bbox_inches = "tight")
+    plt.show()
+    return None
+
+#####
 
