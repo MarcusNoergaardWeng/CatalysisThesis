@@ -1063,7 +1063,6 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_m
     # Text showing the potential
     ax.text(x =  0.5, y = -corrections["Jack_COOH"]+potential+0.01, s = f"$eU = {potential:.2f}  eV$") #\Delta E_{FAOR}$")
 
-
     stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
         ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.1f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
@@ -1383,12 +1382,14 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     # Add the thermal corrections to make Gibbs free energies
     surface["H_G"]    = surface["H_E"]    + corrections["Jack_H"]
     surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH"]
+    surface["OH_G"]   = surface["OH_E"]   + corrections["OH"]
+    surface["O_G"]    = surface["O_E"]    + corrections["O"]
 
     # Calculate and attach the border voltages
-    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
-    surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_E"]   )
-    surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_E"])
-    surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_E"]  )
+    surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_G"]   ) # TJek - should be based on G's I think
+    surface["O_V"]    = calc_V_border(ads = "O",    G = surface["O_G"]   )
+    surface["COOH_V"] = calc_V_border(ads = "COOH", G = surface["COOH_G"])
+    surface["OH_V"]   = calc_V_border(ads = "OH",   G = surface["OH_G"]  )
 
     # Predict the energies on the mixed sites
     surface = predict_mixed_energies(surface, dim_x, dim_y, models)
@@ -2061,7 +2062,7 @@ def per_site_activity_special(COOH_binding_energies, H_binding_energies, eU):
 
     allowed_energies = [] #All the COOH binding energies on sites, where H is not a neighbouring adsorbate
     disqualified_energies = 0
-
+    
     for idx_x in range(dim_x):
         for idx_y in range(dim_y):
             # Check if any of the neighbouring hollow sites could house an H
@@ -2436,3 +2437,5 @@ def save_activities_csv(filename, molar_fractions, estimated_activities, estimat
 
     print(f'Data has been saved to {csv_file_name}')
     return None
+
+
