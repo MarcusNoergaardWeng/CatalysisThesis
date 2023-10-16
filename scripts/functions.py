@@ -2492,9 +2492,9 @@ def counting_activity_scan(surface, Vmin, Vmax, points):
         blocked_list.append(blocked)
     return np.array(potential_range), np.array(active_list), np.array(inactive_list), np.array(blocked_list)
 
-def counting_activity_plot(potential_range, active_list, inactive_list, blocked_list, split):
+def counting_activity_plot(potential_range, active_list, inactive_list, blocked_list, split, filename):
     fig, ax = plt.subplots(figsize = (8, 5))
-    n_sites = 200*200
+    n_sites = dim_x*dim_y #Change to fit dims
     ax.plot(potential_range, active_list/n_sites,   c = "green", label = "Active on-top sites")
     ax.plot(potential_range, inactive_list/n_sites, c = "grey", label = "Inactive on-top sites")
     ax.plot(potential_range, blocked_list/n_sites,  c = "r", label = "Blocked on-top sites")
@@ -2521,5 +2521,32 @@ def counting_activity_plot(potential_range, active_list, inactive_list, blocked_
     plt.show()
     return None
 
+def write_to_csv(file_name, column_names, *data_lists):
+    # Zip all the data lists together
+    data = zip(*list(data_lists))
+
+    # Write to CSV
+    with open(file_name, mode='w', newline='') as csv_file:
+        csv_writer = csv.writer(csv_file)
+
+        # Write header
+        csv_writer.writerow(column_names)
+
+        # Write data
+        csv_writer.writerows(data)
+
+    print(f'Data has been written to {file_name}')
+
+def load_max_counting_activity(filename):
+    # Load the CSV file into a DataFrame
+    df = pd.read_csv(filename)
+
+    # Access the specific column
+    active_list = df["Active"]
+
+    optimal_index = active_list.idxmax()
+    optimal_active_sites = active_list[optimal_index]
+    optimal_split = [df["Ag"][optimal_index], df["Au"][optimal_index], df["Cu"][optimal_index], df["Pd"][optimal_index], df["Pt"][optimal_index]]
+    return optimal_active_sites, optimal_split
 #####
 
