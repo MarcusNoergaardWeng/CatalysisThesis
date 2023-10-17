@@ -23,7 +23,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 100, 100
+dim_x, dim_y = 200, 200
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
@@ -638,7 +638,11 @@ def load_corrections():
         "Bagger_H": 0.20, \
         "Bagger_COOH": -0.11414, \
         "Jack_H": 0.20,\
-        "Jack_COOH": 0.29}
+        "Jack_COOH": 0.29, \
+        "Jack_H_Pt": 0.20 - 0.0676, \
+        "Jack_COOH_Pt": 0.29 - 0.0676, \
+        "Jack_H_bonus": 0.20 - 0.0676 - 0.04, \
+        "Jack_COOH_bonus": 0.29 - 0.0676 - 0.04}
     return corrections
 
 corrections = load_corrections()
@@ -935,8 +939,8 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     ax.axvline(x = -corrections["Jack_H"], ymin = ymin, ymax = ymax, c = "black")
 
     # And text for those correction lines
-    ax.text(x = -corrections["Jack_H"]+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
-    ax.text(x =  1.0, y = -corrections["Jack_COOH"]+0.01, s = "$\Delta E_{FAOR}$")
+    ax.text(x = -corrections["Jack_H"]+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}, Chan}$")
+    ax.text(x =  0.3, y = -corrections["Jack_COOH"]+0.02, s = "$\Delta E_{FAOR, Chan}$")
 
     #### REWARD TYPES ####
 
@@ -1048,20 +1052,20 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_m
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
 
     # Make lines at the correction constants
-    ax.axhline(y = -corrections["Jack_COOH"], xmin = xmin, xmax = xmax, c = "black")
-    ax.axvline(x = -corrections["Jack_H"], ymin = ymin, ymax = ymax, c = "black")
+    ax.axhline(y = -corrections["Jack_COOH_bonus"], xmin = xmin, xmax = xmax, c = "black", linestyle = "dashed")
+    ax.axvline(x = -corrections["Jack_H_bonus"], ymin = ymin, ymax = ymax, c = "black", linestyle = "dashed")
 
     # And text for those correction lines
-    ax.text(x = -corrections["Jack_H"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}}$")
-    ax.text(x =  1.0, y = -corrections["Jack_COOH"]+potential+0.01, s = "$\Delta E_{FAOR}$")
+    ax.text(x = -corrections["Jack_H_bonus"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD, mod}}$")
+    ax.text(x =  0.3, y = -corrections["Jack_COOH_bonus"]+0.02, s = "$\Delta E_{FAOR, mod}$")
     
     ### New dashed lines with potential
     # Lines that move with the deltaG=0 when potential (eU) changes
-    ax.axhline(y = -corrections["Jack_COOH"]+potential, xmin = xmin, xmax = xmax, c = "black", linestyle = "dashed")
-    ax.axvline(x = -corrections["Jack_H"]-potential, ymin = ymin, ymax = ymax,    c = "black", linestyle = "dashed")
+    ax.axhline(y = -corrections["Jack_COOH_bonus"]+potential, xmin = xmin, xmax = xmax, c = "black", linestyle = "dotted")
+    ax.axvline(x = -corrections["Jack_H_bonus"]-potential, ymin = ymin, ymax = ymax,    c = "black", linestyle = "dotted")
 
     # Text showing the potential
-    ax.text(x =  0.5, y = -corrections["Jack_COOH"]+potential+0.01, s = f"$eU = {potential:.2f}  eV$") #\Delta E_{FAOR}$")
+    ax.text(x =  0.7, y = -corrections["Jack_COOH_bonus"]+potential+0.01, s = f"$eU = {potential:.2f}\,eV$") #\Delta E_{FAOR}$")
 
     stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
@@ -1079,7 +1083,6 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_m
     else:
         plt.close()
     return None
-
 
 #### FUNCTIONS FOR BAYESIAN OPTIMIZATION ####
 
@@ -1380,8 +1383,8 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     surface["OH_E"]   = OH_E
 
     # Add the thermal corrections to make Gibbs free energies
-    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H"]
-    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH"]
+    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H_bonus"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH_bonus"]
     surface["OH_G"]   = surface["OH_E"]   + corrections["OH"]
     surface["O_G"]    = surface["O_E"]    + corrections["O"]
 
@@ -1442,8 +1445,8 @@ def precompute_binding_energies_SPEED2(surface, dim_x, dim_y, models): #TJEK ADD
     #surface["OH_E"]   = OH_E
 
     # Add the thermal corrections to make Gibbs free energies
-    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H"]
-    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH"]
+    surface["H_G"]    = surface["H_E"]    + corrections["Jack_H_bonus"]
+    surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH_bonus"]
 
     # Calculate and attach the border voltages
     #surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_E"]   ) # TJek - should be based on G's I think
