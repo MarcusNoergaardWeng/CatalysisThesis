@@ -23,7 +23,7 @@ from Slab import expand_triangle, Slab, inside_triangle
 from FeatureReader import OntopStandard111, FccStandard111
 
 #### KEY VALUES ####
-dim_x, dim_y = 100, 100
+dim_x, dim_y = 200, 200
 metals = ['Ag', 'Au', 'Cu', 'Pd', 'Pt']
 
 metal_colors = dict(Pt = '#babbcb',
@@ -935,12 +935,12 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
 
     # Make lines at the correction constants
-    ax.axhline(y = -corrections["Jack_COOH"], xmin = xmin, xmax = xmax, c = "black")
-    ax.axvline(x = -corrections["Jack_H"], ymin = ymin, ymax = ymax, c = "black")
+    ax.axhline(y = -corrections["Jack_COOH_bonus"], xmin = xmin, xmax = xmax, c = "black")
+    ax.axvline(x = -corrections["Jack_H_bonus"], ymin = ymin, ymax = ymax, c = "black")
 
     # And text for those correction lines
-    ax.text(x = -corrections["Jack_H"]+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}, Chan}$")
-    ax.text(x =  0.3, y = -corrections["Jack_COOH"]+0.02, s = "$\Delta E_{FAOR, Chan}$")
+    ax.text(x = -corrections["Jack_H_bonus"]+0.01, y =  1.2, s = "$\Delta E_{H_{UPD}, mod}$")
+    ax.text(x =  0.3, y = -corrections["Jack_COOH_bonus"]+0.02, s = "$\Delta E_{FAOR, mod}$")
 
     #### REWARD TYPES ####
 
@@ -1025,7 +1025,7 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
         plt.close()
     return None
 
-def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_metal_info, reward_type, show_plot):
+def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, reward_type, show_plot):
     
     # First, calculate the statistics of interest
     E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
@@ -1047,7 +1047,7 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_m
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
     
     #ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
-    ax.set_title(title_text)
+    #ax.set_title(title_text)
     ax.set_xlabel("$\Delta E_{^*H}$ [eV]")
     ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
 
@@ -1069,7 +1069,7 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, title_text, pure_m
 
     stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
-        ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.1f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
+        ax.scatter(E_hol_dict[metal], E_top_dict[metal], label = f"{metal}$_{{{stochiometry[metal]:.2f}}}$", s = 0.5, alpha = 0.8, c = metal_colors[metal]) # edgecolor = "black", linewidth = 0.05, 
     
     for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
         ax.scatter(pure_metal_info["DeltaE_H"][i], pure_metal_info["DeltaE_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
@@ -2527,7 +2527,43 @@ def counting_activity_plot(potential_range, active_list, inactive_list, blocked_
 
     ax.legend()
 
-    plt.savefig("../Counting_Activity/Counting_Sites_" + filename, dpi = 400, bbox_inches = "tight")
+    plt.savefig(filename, dpi = 400, bbox_inches = "tight")
+    plt.show()
+    return None
+
+def counting_activity_plot(potential_range, active_list, inactive_list, blocked_list, specific_potential, split, filename):
+    fig, ax = plt.subplots(figsize = (8, 5))
+    n_sites = dim_x*dim_y #Change to fit dims
+    ax.plot(potential_range, active_list/n_sites,   c = "green", label = "Active on-top sites")
+    ax.plot(potential_range, inactive_list/n_sites, c = "grey", label = "Inactive on-top sites")
+    ax.plot(potential_range, blocked_list/n_sites,  c = "r", label = "Blocked on-top sites")
+
+    # Set the major ticks and tick labels
+    ax.set_xticks     ([0.1, 0.15, 0.2, 0.25, 0.3, 0.35])
+    ax.set_xticklabels([0.1, 0.15, 0.2, 0.25, 0.3, 0.35])
+    ax.set_yticks     ([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    ax.set_yticklabels([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+    ax.set_ylim(-0.05, 1.05)
+
+    # Put the stoichiometry in there
+    ax.text(x=0.175, y=0.93, s = stoch_to_string(split))
+
+    # Set axis labels
+    ax.set_xlabel('Potential [V]')
+    ax.set_ylabel('Number of sites as a fraction of all on-top sites')
+
+    # Set the grid lines
+    ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
+
+    # Make a line showing the potential at which the composition is the best
+    ax.vlines(x = specific_potential, ymin = -0.1, ymax = 1.1, color = 'black', linestyle='dotted')
+    ax.text(x = specific_potential+0.003, y = 0.71, s = f"$eU = {specific_potential:.2f}\,eV$")
+
+
+    ax.legend(loc = "center right")
+
+    plt.savefig(filename, dpi = 400, bbox_inches = "tight")
     plt.show()
     return None
 
