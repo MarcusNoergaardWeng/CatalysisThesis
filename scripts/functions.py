@@ -2185,6 +2185,13 @@ def stoch_to_string(stoichiometry):
         string += f"{metal}$_{{{stoichiometry[idx]:.2f}}}$"
     return string
 
+def stoch_to_string_exclusive(stoichiometry):
+    string = ""
+    for idx, metal in enumerate(metals):
+        if stoichiometry[idx] > 0:
+            string += f"{metal}$_{{{stoichiometry[idx]:.2f}}}$"
+    return string
+
 def activity_plot(activity_dict, filename):
     fig, ax = plt.subplots(figsize = (8, 5))
     ax.plot(activity_dict["potential_range"], activity_dict["j_avg_list"],         label = "Activity estimate based on all on-top sites")
@@ -2551,5 +2558,13 @@ def load_max_counting_activity(filename):
     optimal_active_sites = active_list[optimal_index]
     optimal_split = [df["Ag"][optimal_index], df["Au"][optimal_index], df["Cu"][optimal_index], df["Pd"][optimal_index], df["Pt"][optimal_index]]
     return optimal_active_sites, optimal_split
+
+def power_puff(potential, active_fraction):
+    """Calculates the expected power from the potential and the fraction of active sites"""
+    Cathode_potential = 0.9 #Jack said, that it's said to be at 0.9 V currently
+    Open_circuit_current = Cathode_potential - potential # Volt or eV, if you think about an electron moving over that voltage
+    power_per_site = Open_circuit_current * active_fraction # Volt times 
+    return power_per_site, Open_circuit_current
+
 #####
 
