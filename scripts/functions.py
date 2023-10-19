@@ -2240,6 +2240,9 @@ def load_csv_activity_data(filename):
 def remove_columns(matrix, columns_to_keep):
     return [list(row[i] for i in columns_to_keep) for row in matrix]
 
+def keep_columns(matrix, columns_to_keep):
+    return [list(row[i] for i in columns_to_keep) for row in matrix]
+
 def make_empty_plot():
     fig, ax = plt.subplots(figsize = (6, 6))
 
@@ -2403,7 +2406,7 @@ def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', level
 			else:
 				ax.text(x+dx, y+dy, s=elems[idx], fontsize=24)
     
-	plt.savefig("../Activity_Estimation/"+filename, dpi = 400, bbox_inches = "tight")
+	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
 ## Above code was written by Jack
 
 def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs): # Written with ChatGPT assistance
@@ -2560,7 +2563,6 @@ def counting_activity_plot(potential_range, active_list, inactive_list, blocked_
     ax.vlines(x = specific_potential, ymin = -0.1, ymax = 1.1, color = 'black', linestyle='dotted')
     ax.text(x = specific_potential+0.003, y = 0.71, s = f"$eU = {specific_potential:.2f}\,eV$")
 
-
     ax.legend(loc = "center right")
 
     plt.savefig(filename, dpi = 400, bbox_inches = "tight")
@@ -2595,12 +2597,40 @@ def load_max_counting_activity(filename):
     optimal_split = [df["Ag"][optimal_index], df["Au"][optimal_index], df["Cu"][optimal_index], df["Pd"][optimal_index], df["Pt"][optimal_index]]
     return optimal_active_sites, optimal_split
 
+def load_all_counting_activity(filename):
+    # Load the CSV file into a DataFrame
+    df = pd.read_csv(filename)
+
+    # Access the specific column
+    active_list = df["Active"]
+    splits = [df["Ag"], df["Au"], df["Cu"], df["Pd"], df["Pt"]]
+    splits = np.array(splits).T
+
+    return active_list, splits
+
 def power_puff(potential, active_fraction):
     """Calculates the expected power from the potential and the fraction of active sites"""
     Cathode_potential = 0.9 #Jack said, that it's said to be at 0.9 V currently
     Open_circuit_current = Cathode_potential - potential # Volt or eV, if you think about an electron moving over that voltage
     power_per_site = Open_circuit_current * active_fraction # Volt times 
     return power_per_site, Open_circuit_current
+
+# Create a mask based on the condition
+def select_metals_summing_to_one(splits, active_list, select_metals):
+    mask = np.sum(splits[:, select_metals], axis=1) == 1.0
+    splits_PtAgAu = splits[mask]
+    active_list_PtAgAu = active_list[mask]
+    splits_PtAgAu = keep_columns(splits_PtAgAu, select_metals)
+    return active_list_PtAgAu, splits_PtAgAu
+
+def select_metals_summing_to_one_special_needs(splits, active_list, select_metals, equal_metals):
+    mask_sum = np.sum(splits[:, select_metals], axis=1) == 1.0
+    mask_equal = splits[:, equal_metals[0]] == splits[:, equal_metals[1]]
+    super_mask = mask_sum & mask_equal
+    splits_PtAgAu = splits[super_mask]
+    active_list_PtAgAu = active_list[super_mask]
+    splits_PtAgAu = keep_columns(splits_PtAgAu, select_metals)
+    return active_list_PtAgAu, splits_PtAgAu
 
 #####
 
