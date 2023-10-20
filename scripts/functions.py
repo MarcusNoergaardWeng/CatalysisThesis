@@ -1026,7 +1026,7 @@ def deltaEdeltaE_plot(filename, surface, title_text, pure_metal_info, reward_typ
     return None
 
 def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, reward_type, show_plot):
-    
+    font_size_special = 14
     # First, calculate the statistics of interest
     E_top_dict, E_hol_dict, good_hol_sites, n_ratios = sort_energies(surface, reward_type)
 
@@ -1042,22 +1042,25 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, r
     ax.set_xticklabels([-0.5, 0, 0.5, 1.0])
     ax.set_yticks([-0.5, 0, 0.5, 1.0])
     ax.set_yticklabels([-0.5, 0, 0.5, 1.0])
+
+    plt.xticks(fontsize=font_size_special)
+    plt.yticks(fontsize=font_size_special)
     
     # Set the grid lines
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
     
     #ax.set_title("Predicted energies for $^*COOH$ and $^*H$ for whole surface")
     #ax.set_title(title_text)
-    ax.set_xlabel("$\Delta E_{^*H}$ [eV]")
-    ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]")
+    ax.set_xlabel("$\Delta E_{^*H}$ [eV]", fontsize = font_size_special)
+    ax.set_ylabel("$\Delta E_{^*COOH}$ [eV]", fontsize = font_size_special)
 
     # Make lines at the correction constants
     ax.axhline(y = -corrections["Jack_COOH_bonus"], xmin = xmin, xmax = xmax, c = "black", linestyle = "dashed")
     ax.axvline(x = -corrections["Jack_H_bonus"], ymin = ymin, ymax = ymax, c = "black", linestyle = "dashed")
 
     # And text for those correction lines
-    ax.text(x = -corrections["Jack_H_bonus"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD, mod}}$")
-    ax.text(x =  0.3, y = -corrections["Jack_COOH_bonus"]+0.02, s = "$\Delta E_{FAOR, mod}$")
+    ax.text(x = -corrections["Jack_H_bonus"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD, mod}}$", fontsize = font_size_special)
+    ax.text(x =  0.3, y = -corrections["Jack_COOH_bonus"]+0.02, s = "$\Delta E_{FAOR, mod}$", fontsize = font_size_special)
     
     ### New dashed lines with potential
     # Lines that move with the deltaG=0 when potential (eU) changes
@@ -1065,7 +1068,7 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, r
     ax.axvline(x = -corrections["Jack_H_bonus"]-potential, ymin = ymin, ymax = ymax,    c = "black", linestyle = "dotted")
 
     # Text showing the potential
-    ax.text(x =  0.7, y = -corrections["Jack_COOH_bonus"]+potential+0.01, s = f"$eU = {potential:.2f}\,eV$") #\Delta E_{FAOR}$")
+    ax.text(x =  0.7, y = -corrections["Jack_COOH_bonus"]+potential+0.01, s = f"$eU = {potential:.2f}\,eV$", fontsize = font_size_special) #\Delta E_{FAOR}$")
 
     stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
@@ -1073,9 +1076,9 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, r
     
     for i, metal in enumerate(pure_metal_info["SE_slab_metals"]):
         ax.scatter(pure_metal_info["DeltaE_H"][i], pure_metal_info["DeltaE_COOH"][i], label = "Pure "+metal, marker = "o", c = metal_colors[metal], edgecolors='black')
-        ax.text(pure_metal_info["DeltaE_H"][i]+0.03, pure_metal_info["DeltaE_COOH"][i], s = metal)
+        ax.text(pure_metal_info["DeltaE_H"][i]+0.03, pure_metal_info["DeltaE_COOH"][i], s = metal, fontsize = font_size_special)
 
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper right", prop={'size': font_size_special-2})
 
     plt.savefig("../figures/"+filename+".png", dpi = 600, bbox_inches = "tight")
     if show_plot == True:
@@ -2338,7 +2341,7 @@ def molar_fractions_to_cartesians(fs):
 	return np.dot(vertices_matrix, fs.T)
 
 def make_triangle_ticks(ax, start, stop, tick, n, offset=(0., 0.),
-						fontsize=18, ha='center', tick_labels=True):
+						fontsize=14, ha='center', tick_labels=True):
 	r = np.linspace(0, 1, n+1)
 	x = start[0] * (1 - r) + stop[0] * r
 	x = np.vstack((x, x + tick[0]))
@@ -2353,7 +2356,62 @@ def make_triangle_ticks(ax, start, stop, tick, n, offset=(0., 0.),
 			ax.text(xx+offset[0], yy+offset[1], f'{rr*100.:.0f}',
 					fontsize=fontsize, ha=ha)
 
-def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', levels=30,
+def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', levels=30, #This one has had the font sizes changed
+							  color_norm=None, filled=True, axis_labels=True,
+							  n_ticks=10, tick_labels=True, corner_labels=True):
+	font_size_special = 14
+	# Get cartesian coordinates corresponding to the molar fractions
+	xs, ys = molar_fractions_to_cartesians(fs)
+	
+	# Make contour plot
+	if filled:
+		ax.tricontourf(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+	else:
+		ax.tricontour(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+    
+	# Specify vertices as molar fractions
+	fs_vertices = [[1., 0., 0.],
+				   [0., 1., 0.],
+				   [0., 0., 1.]]
+	
+	# Get cartesian coordinates of vertices
+	xs, ys = molar_fractions_to_cartesians(fs_vertices)
+	
+	# Make ticks and tick labels on the triangle axes
+	left, right, top = np.concatenate((xs.reshape(-1,1), ys.reshape(-1,1)), axis=1)
+	
+	tick_size = 0.025
+	bottom_ticks = 0.8264*tick_size * (right - top)
+	right_ticks = 0.8264*tick_size * (top - left)
+	left_ticks = 0.8264*tick_size * (left - right)
+    
+	make_triangle_ticks(ax, right, left, bottom_ticks, n_ticks, offset=(0.03, -0.08), ha='center', tick_labels=tick_labels)
+	make_triangle_ticks(ax, left, top, left_ticks, n_ticks, offset=(-0.03, -0.015), ha='right', tick_labels=tick_labels)
+	make_triangle_ticks(ax, top, right, right_ticks, n_ticks, offset=(0.015, 0.02), ha='left', tick_labels=tick_labels)
+
+	if axis_labels:
+		# Show axis labels (i.e. atomic percentages)
+		ax.text(0.5, -0.12, f'{elems[0]} content (%)', rotation=0., fontsize=font_size_special, ha='center', va='center')
+		ax.text(0.88, 0.5, f'{elems[1]} content (%)', rotation=-60., fontsize=font_size_special, ha='center', va='center')
+		ax.text(0.12, 0.5, f'{elems[2]} content (%)', rotation=60., fontsize=font_size_special, ha='center', va='center')
+
+	if corner_labels:
+		
+		# Define padding to put the text neatly
+		pad = [[-0.13, -0.09],
+			   [ 0.07, -0.09],
+			   [-0.04,  0.09]]
+		
+		# Show the chemical symbol as text at each vertex
+		for idx, (x, y, (dx, dy)) in enumerate(zip(xs, ys, pad)):
+			if len(elems[idx]) > 2:
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=font_size_special+2)
+			else:
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=font_size_special+2)
+    
+	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
+
+def make_ternary_contour_plot_copy(fs, zs, ax, elems, filename, cmap='viridis', levels=30,
 							  color_norm=None, filled=True, axis_labels=True,
 							  n_ticks=5, tick_labels=True, corner_labels=True):
 
@@ -2388,9 +2446,9 @@ def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', level
 
 	if axis_labels:	
 		# Show axis labels (i.e. atomic percentages)
-		ax.text(0.5, -0.12, f'{elems[0]} content (%)', rotation=0., fontsize=20, ha='center', va='center')
-		ax.text(0.88, 0.5, f'{elems[1]} content (%)', rotation=-60., fontsize=20, ha='center', va='center')
-		ax.text(0.12, 0.5, f'{elems[2]} content (%)', rotation=60., fontsize=20, ha='center', va='center')
+		ax.text(0.5, -0.12, f'{elems[0]} content (%)', rotation=0., fontsize=14, ha='center', va='center')
+		ax.text(0.88, 0.5, f'{elems[1]} content (%)', rotation=-60., fontsize=14, ha='center', va='center')
+		ax.text(0.12, 0.5, f'{elems[2]} content (%)', rotation=60., fontsize=14, ha='center', va='center')
 
 	if corner_labels:
 		
@@ -2402,11 +2460,12 @@ def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', level
 		# Show the chemical symbol as text at each vertex
 		for idx, (x, y, (dx, dy)) in enumerate(zip(xs, ys, pad)):
 			if len(elems[idx]) > 2:
-				ax.text(x+dx-0.25, y+dy, s=elems[idx], fontsize=24)
+				ax.text(x+dx-0.25, y+dy, s=elems[idx], fontsize=14)
 			else:
-				ax.text(x+dx, y+dy, s=elems[idx], fontsize=24)
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=14)
     
 	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
+
 ## Above code was written by Jack
 
 def find_max_activity(molar_fractions, estimated_activities, estimated_max_eUs): # Written with ChatGPT assistance
@@ -2535,7 +2594,8 @@ def counting_activity_plot(potential_range, active_list, inactive_list, blocked_
     return None
 
 def counting_activity_plot(potential_range, active_list, inactive_list, blocked_list, specific_potential, split, filename):
-    fig, ax = plt.subplots(figsize = (8, 5))
+    fig, ax = plt.subplots(figsize = (6, 6))
+    font_size_special = 14
     n_sites = dim_x*dim_y #Change to fit dims
     ax.plot(potential_range, active_list/n_sites,   c = "green", label = "Active on-top sites")
     ax.plot(potential_range, inactive_list/n_sites, c = "grey", label = "Inactive on-top sites")
@@ -2547,24 +2607,27 @@ def counting_activity_plot(potential_range, active_list, inactive_list, blocked_
     ax.set_yticks     ([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     ax.set_yticklabels([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
 
+    plt.xticks(fontsize=font_size_special)
+    plt.yticks(fontsize=font_size_special)
+
     ax.set_ylim(-0.05, 1.05)
 
     # Put the stoichiometry in there
-    ax.text(x=0.175, y=0.93, s = stoch_to_string(split))
+    ax.text(x=0.172, y=0.75, s = stoch_to_string_exclusive(split), fontsize=font_size_special-2)
 
     # Set axis labels
-    ax.set_xlabel('Potential [V]')
-    ax.set_ylabel('Number of sites as a fraction of all on-top sites')
+    ax.set_xlabel('Potential vs RHE [V]', fontsize = font_size_special)
+    ax.set_ylabel('Fraction of all on-top sites', fontsize = font_size_special)
 
     # Set the grid lines
     ax.grid(which='both', linestyle=':', linewidth=0.5, color='gray')
 
     # Make a line showing the potential at which the composition is the best
     ax.vlines(x = specific_potential, ymin = -0.1, ymax = 1.1, color = 'black', linestyle='dotted')
-    ax.text(x = specific_potential+0.003, y = 0.71, s = f"$eU = {specific_potential:.2f}\,eV$")
+    ax.text(x = specific_potential+0.003, y = 0.41, s = f"$eU = {specific_potential:.2f}\,eV$", fontsize = font_size_special-2, rotation = 90)
 
-    ax.legend(loc = "center right")
-
+    ax.legend(loc = "upper left", prop={'size': font_size_special-2})
+    
     plt.savefig(filename, dpi = 400, bbox_inches = "tight")
     plt.show()
     return None
@@ -2631,6 +2694,10 @@ def select_metals_summing_to_one_special_needs(splits, active_list, select_metal
     active_list_PtAgAu = active_list[super_mask]
     splits_PtAgAu = keep_columns(splits_PtAgAu, select_metals)
     return active_list_PtAgAu, splits_PtAgAu
+
+def normalize_rows(array):
+    normalized_array = array / array.sum(axis=1, keepdims=True)
+    return normalized_array
 
 #####
 
