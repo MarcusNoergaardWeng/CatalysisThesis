@@ -2411,6 +2411,75 @@ def make_ternary_contour_plot(fs, zs, ax, elems, filename, cmap='viridis', level
     
 	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
 
+def make_ternary_contour_plot_cross(fs, zs, ax, elems, optimal_composition, best_name, filename, cmap='viridis', levels=30, #This one has had the font sizes changed and I added a cross at the optimum
+							  color_norm=None, filled=True, axis_labels=True,
+							  n_ticks=10, tick_labels=True, corner_labels=True):
+	font_size_special = 14
+	# Get cartesian coordinates corresponding to the molar fractions
+	xs, ys = molar_fractions_to_cartesians(fs)
+	
+    # Get cartesian coordinates corresponding to the OPTIMAL molar fraction
+	xs_opt, ys_opt = molar_fractions_to_cartesians(optimal_composition)
+
+	# Make contour plot
+	if filled:
+		ax.tricontourf(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+	else:
+		ax.tricontour(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+    
+	# Specify vertices as molar fractions
+	fs_vertices = [[1., 0., 0.],
+				   [0., 1., 0.],
+				   [0., 0., 1.]]
+	
+	# Get cartesian coordinates of vertices
+	xs, ys = molar_fractions_to_cartesians(fs_vertices)
+	
+	# Make ticks and tick labels on the triangle axes
+	left, right, top = np.concatenate((xs.reshape(-1,1), ys.reshape(-1,1)), axis=1)
+	
+	tick_size = 0.025
+	bottom_ticks = 0.8264*tick_size * (right - top)
+	right_ticks = 0.8264*tick_size * (top - left)
+	left_ticks = 0.8264*tick_size * (left - right)
+    
+	make_triangle_ticks(ax, right, left, bottom_ticks, n_ticks, offset=(0.03, -0.08), ha='center', tick_labels=tick_labels)
+	make_triangle_ticks(ax, left, top, left_ticks, n_ticks, offset=(-0.03, -0.015), ha='right', tick_labels=tick_labels)
+	make_triangle_ticks(ax, top, right, right_ticks, n_ticks, offset=(0.015, 0.02), ha='left', tick_labels=tick_labels)
+
+	if axis_labels:
+		# Show axis labels (i.e. atomic percentages)
+		ax.text(0.5, -0.12, f'{elems[0]} content (%)', rotation=0., fontsize=font_size_special, ha='center', va='center')
+		ax.text(0.88, 0.5, f'{elems[1]} content (%)', rotation=-60., fontsize=font_size_special, ha='center', va='center')
+		ax.text(0.12, 0.5, f'{elems[2]} content (%)', rotation=60., fontsize=font_size_special, ha='center', va='center')
+
+	if corner_labels:
+		
+		# Define padding to put the text neatly
+		pad = [[-0.13, -0.09],
+			   [ 0.07, -0.09],
+			   [-0.04,  0.09]]
+		
+		# Show the chemical symbol as text at each vertex
+		for idx, (x, y, (dx, dy)) in enumerate(zip(xs, ys, pad)):
+			if len(elems[idx]) > 2:
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=font_size_special+2)
+			else:
+				ax.text(x+dx, y+dy, s=elems[idx], fontsize=font_size_special+2)
+    
+	# Plot a cross at the optimal composition
+	ax.scatter(xs_opt, ys_opt, marker = "x", s = 50, c = "black")
+
+    # Show the optimal composition found from the finer grained search
+	from matplotlib.font_manager import FontProperties
+	bold_font = FontProperties(weight='bold')
+	x_middle, y_middle = molar_fractions_to_cartesians([1/3, 1/3, 1/3])
+	ax.text(x = x_middle, y=y_middle, s = best_name, fontproperties=bold_font, horizontalalignment='center', verticalalignment='center')
+
+	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
+
+
+
 def make_ternary_contour_plot_copy(fs, zs, ax, elems, filename, cmap='viridis', levels=30,
 							  color_norm=None, filled=True, axis_labels=True,
 							  n_ticks=5, tick_labels=True, corner_labels=True):
@@ -2673,7 +2742,7 @@ def load_all_counting_activity(filename):
 
 def power_puff(potential, active_fraction):
     """Calculates the expected power from the potential and the fraction of active sites"""
-    Cathode_potential = 0.9 #Jack said, that it's said to be at 0.9 V currently
+    Cathode_potential = 0.9 #Jack said, that it's said to be at 0.9 V currently (optimistically)
     Open_circuit_current = Cathode_potential - potential # Volt or eV, if you think about an electron moving over that voltage
     power_per_site = Open_circuit_current * active_fraction # Volt times 
     return power_per_site, Open_circuit_current
@@ -2699,5 +2768,5 @@ def normalize_rows(array):
     normalized_array = array / array.sum(axis=1, keepdims=True)
     return normalized_array
 
-#####
+#
 
