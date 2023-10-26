@@ -2422,10 +2422,11 @@ def make_ternary_contour_plot_cross(fs, zs, ax, elems, optimal_composition, best
 	xs_opt, ys_opt = molar_fractions_to_cartesians(optimal_composition)
 
 	# Make contour plot
+	contour = None  # Define the contour variable
 	if filled:
-		ax.tricontourf(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+		contour = ax.tricontourf(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
 	else:
-		ax.tricontour(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
+		contour = ax.tricontour(xs, ys, zs, levels=levels, cmap=cmap, norm=color_norm, zorder=0)#, vmin = 0, vmax = 5*10**6)
     
 	# Specify vertices as molar fractions
 	fs_vertices = [[1., 0., 0.],
@@ -2475,6 +2476,14 @@ def make_ternary_contour_plot_cross(fs, zs, ax, elems, optimal_composition, best
 	bold_font = FontProperties(weight='bold')
 	x_middle, y_middle = molar_fractions_to_cartesians([1/3, 1/3, 1/3])
 	ax.text(x = x_middle, y=y_middle, s = best_name, fontproperties=bold_font, horizontalalignment='center', verticalalignment='center')
+
+	# Add colorbar
+	cbar = plt.colorbar(contour, ax=ax, shrink=0.25, pad = -0.2, anchor=(0.0, 0.90), label='Active sites (%)')
+	#cbar.set_ticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+	# Set the number of ticks on the colorbar
+	import matplotlib.ticker as ticker
+	cbar.locator = ticker.MaxNLocator(nbins=5)
+	cbar.update_ticks()
 
 	plt.savefig(filename, dpi = 400, bbox_inches = "tight")
 
