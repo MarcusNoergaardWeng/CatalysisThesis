@@ -635,6 +635,8 @@ def load_corrections():
         "H": calc_correction_constant_H(AF), \
         "OH": calc_correction_constant_OH(AF), \
         "O": calc_correction_constant_O(AF), \
+        "Chan_OH": -0.14, \
+        "Chan_O": 0.12, \
         "Bagger_H": 0.20, \
         "Bagger_COOH": -0.11414, \
         "Jack_H": 0.20,\
@@ -1388,8 +1390,8 @@ def precompute_binding_energies_SPEED(surface, dim_x, dim_y, models): #TJEK ADD 
     # Add the thermal corrections to make Gibbs free energies
     surface["H_G"]    = surface["H_E"]    + corrections["Jack_H_bonus"]
     surface["COOH_G"] = surface["COOH_E"] + corrections["Jack_COOH_bonus"]
-    surface["OH_G"]   = surface["OH_E"]   + corrections["OH"]
-    surface["O_G"]    = surface["O_E"]    + corrections["O"]
+    surface["OH_G"]   = surface["OH_E"]   + corrections["Chan_OH"]
+    surface["O_G"]    = surface["O_E"]    + corrections["Chan_O"]
 
     # Calculate and attach the border voltages
     surface["H_V"]    = calc_V_border(ads = "H",    G = surface["H_G"]   ) # TJek - should be based on G's I think
@@ -1801,11 +1803,11 @@ def calc_V_border(ads, G): # TJEK use this in an efficient way in the precompute
     if ads == "H":
      V_border = - G  # Lille boost #+ 0.7 # HER sætter jeg lige et boost ind, for at tjekke, om det fungerer, når *CO-reaktionen sker
     if ads == "COOH":
-        V_border = G -0.3 # TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
+        V_border = G# TJEK er 0.7 et boost for at tjekke H+COOH -> CO + H2O reaktionen?
     if ads == "OH":
-        V_border = G + 0.5 # TJEK BOOST            # Hvad er funktionen? Det samme som for COOH?
+        V_border = G# TJEK BOOST            # Hvad er funktionen? Det samme som for COOH?
     if ads == "O":
-        V_border = G/2+ 0.5 # TJEK BOOST          # Hvad er funktionen? Her hopper 2 elektroner af, så der sker noget andet
+        V_border = G/2# TJEK BOOST          # Hvad er funktionen? Her hopper 2 elektroner af, så der sker noget andet
     
     return V_border
 
