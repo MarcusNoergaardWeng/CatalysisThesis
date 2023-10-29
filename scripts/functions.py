@@ -1061,16 +1061,23 @@ def deltaEdeltaE_plot_potential(filename, surface, potential, pure_metal_info, r
     ax.axvline(x = -corrections["Jack_H_bonus"], ymin = ymin, ymax = ymax, c = "black", linestyle = "dashed")
 
     # And text for those correction lines
-    ax.text(x = -corrections["Jack_H_bonus"]-potential+0.01, y =  1.2, s = "$\Delta E_{H_{UPD, mod}}$", fontsize = font_size_special)
-    ax.text(x =  0.3, y = -corrections["Jack_COOH_bonus"]+0.02, s = "$\Delta E_{FAOR, mod}$", fontsize = font_size_special)
+    ax.text(x = -corrections["Jack_H_bonus"]-potential+0.01, y =  1.2, s = "$\Delta G_{^*H}^{mod}=0$", fontsize = font_size_special)
+    ax.text(x =  0.1, y = -corrections["Jack_COOH_bonus"]+potential+0.03, s = "$\Delta G_{^*COOH}^{mod}=0$", fontsize = font_size_special)
     
+    ### Add small arrow to point to the pure Pt energies
+    if False:
+        arrow_start = (-0.30, -0.15)
+        arrow_end = (-0.4, -0.03)
+        ax.annotate("", xy=arrow_end, xytext=arrow_start,
+            arrowprops=dict(arrowstyle="->", linewidth=2, alpha=0.7))
+
     ### New dashed lines with potential
     # Lines that move with the deltaG=0 when potential (eU) changes
     ax.axhline(y = -corrections["Jack_COOH_bonus"]+potential, xmin = xmin, xmax = xmax, c = "black", linestyle = "dotted")
     ax.axvline(x = -corrections["Jack_H_bonus"]-potential, ymin = ymin, ymax = ymax,    c = "black", linestyle = "dotted")
 
     # Text showing the potential
-    ax.text(x =  0.7, y = -corrections["Jack_COOH_bonus"]+potential+0.01, s = f"$eU = {potential:.2f}\,eV$", fontsize = font_size_special) #\Delta E_{FAOR}$")
+    ax.text(x =  0.75, y = -corrections["Jack_COOH_bonus"]+potential+0.01, s = f"$eU = {potential:.2f}\,eV$", fontsize = font_size_special) #\Delta E_{FAOR}$")
 
     stochiometry = surface["stochiometry"]
     for metal in ['Ag', 'Au', 'Cu', 'Pd', 'Pt']:
